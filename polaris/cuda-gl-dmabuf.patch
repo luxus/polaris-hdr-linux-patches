@@ -1,0 +1,242 @@
+From: luxusAi
+Subject: cuda: GL encode path — EGL import + mmap fallback, renderD prefer
+
+Drop CUDA extmem (INVALID_VALUE on gamescope). Prefer render node.
+EGL import with fd cache; mmap fallback is logged visibly.
+
+--- a/src/platform/linux/cuda.cpp
++++ b/src/platform/linux/cuda.cpp
+@@ -3,9 +3,12 @@
+  * @brief Definitions for CUDA encoding.
+  */
+ // standard includes
++#include <algorithm>
+ #include <array>
+ #include <bitset>
+ #include <fcntl.h>
++#include <sys/mman.h>
++#include <unistd.h>
+ #include <filesystem>
+ #include <thread>
+ 
+@@ -38,6 +41,11 @@
+ #define CU_CHECK_IGNORE(x, y) \
+   check((x), POLARIS_STRINGVIEW(y ": "))
+ 
++// CUDA 11.2+; not always present in bundled nv-codec-headers.
++#ifndef CU_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_FD
++  #define CU_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_FD ((CUexternalMemoryHandleType) 7)
++#endif
++
+ namespace fs = std::filesystem;
+ 
+ using namespace std::literals;
+@@ -249,23 +257,40 @@
+       return std::tolower(c);
+     });
+ 
+-    // Look for the name of the primary node in sysfs
++    // Prefer render node for GBM/EGL import of client DMA-BUFs (gamescope/Vulkan
++    // export via renderD*). Primary card node is fallback.
+     try {
+       char sysfs_path[PATH_MAX];
+       std::snprintf(sysfs_path, sizeof(sysfs_path), "/sys/bus/pci/devices/%s/drm", pci_bus_id.data());
+       fs::path sysfs_dir {sysfs_path};
++      fs::path dri_path {"/dev/dri"sv};
++      std::string render_name;
++      std::string card_name;
+       for (auto &entry : fs::directory_iterator {sysfs_dir}) {
+-        auto file = entry.path().filename();
+-        auto filestring = file.generic_string();
+-        if (std::string_view {filestring}.substr(0, 4) != "card"sv) {
+-          continue;
++        auto filestring = entry.path().filename().generic_string();
++        if (filestring.rfind("renderD", 0) == 0) {
++          render_name = filestring;
+         }
+-
+-        BOOST_LOG(debug) << "Found DRM primary node: "sv << filestring;
+-
+-        fs::path dri_path {"/dev/dri"sv};
+-        auto device_path = dri_path / file;
+-        return open(device_path.c_str(), O_RDWR);
++        else if (filestring.rfind("card", 0) == 0 && filestring.find("control") == std::string::npos) {
++          card_name = filestring;
++        }
++      }
++      auto try_open = [&](const std::string &name, const char *kind) -> file_t {
++        if (name.empty()) {
++          return -1;
++        }
++        auto device_path = dri_path / name;
++        int fd = open(device_path.c_str(), O_RDWR | O_CLOEXEC);
++        if (fd >= 0) {
++          BOOST_LOG(info) << "CUDA/EGL DRM "sv << kind << " node: "sv << device_path.string();
++        }
++        return fd;
++      };
++      if (auto fd = try_open(render_name, "render"); fd.el >= 0) {
++        return fd;
++      }
++      if (auto fd = try_open(card_name, "primary"); fd.el >= 0) {
++        return fd;
+       }
+     } catch (const std::filesystem::filesystem_error &err) {
+       BOOST_LOG(error) << "Failed to read sysfs: "sv << err.what();
+@@ -382,14 +407,15 @@
+       this->sws = std::move(*sws_opt);
+       this->nv12 = std::move(*nv12_opt);
+ 
+-      auto cuda_ctx = (AVCUDADeviceContext *) hw_frames_ctx->device_ctx->hwctx;
++      auto cuda_dev_ctx = (AVCUDADeviceContext *) hw_frames_ctx->device_ctx->hwctx;
++      cu_context = cuda_dev_ctx->cuda_ctx;
+ 
+       stream = make_stream();
+       if (!stream) {
+         return -1;
+       }
+ 
+-      cuda_ctx->stream = stream.get();
++      cuda_dev_ctx->stream = stream.get();
+ 
+       CU_CHECK(cdf->cuGraphicsGLRegisterImage(&y_res, nv12->tex[0], GL_TEXTURE_2D, CU_GRAPHICS_REGISTER_FLAGS_READ_ONLY), "Couldn't register Y plane texture");
+       CU_CHECK(cdf->cuGraphicsGLRegisterImage(&uv_res, nv12->tex[1], GL_TEXTURE_2D, CU_GRAPHICS_REGISTER_FLAGS_READ_ONLY), "Couldn't register UV plane texture");
+@@ -407,7 +433,6 @@
+       egl::rgb_t *active_rgb = nullptr;
+ 
+       if (descriptor.sequence == 0) {
+-        // For dummy images, use a blank RGB texture instead of importing a DMA-BUF
+         blank_rgb = egl::create_blank(img);
+         active_rgb = &blank_rgb;
+         active_buffer_key = 0;
+@@ -416,7 +441,7 @@
+ 
+         if (descriptor.dmabuf_buffer_key != 0) {
+           for (auto &entry : rgb_cache) {
+-            if (entry.buffer_key == descriptor.dmabuf_buffer_key && entry.rgb.el.xrgb8 != EGL_NO_IMAGE) {
++            if (entry.buffer_key == descriptor.dmabuf_buffer_key && entry.rgb->tex[0] != 0) {
+               active_rgb = &entry.rgb;
+               break;
+             }
+@@ -424,16 +449,66 @@
+         }
+ 
+         if (!active_rgb) {
+-          auto rgb_opt = egl::import_source(display.get(), descriptor.sd);
+-          if (!rgb_opt) {
+-            return -1;
++          const auto &sd = descriptor.sd;
++          bool filled = false;
++
++          // EGL TexStorageEXT import (zero-copy). gamescope dmabufs reject CUDA extmem.
++          if (dmabuf_path != dmabuf_path_e::mmap_cpu && !egl_import_disabled) {
++            auto rgb_opt = egl::import_source(display.get(), sd);
++            if (rgb_opt) {
++              if (dmabuf_path != dmabuf_path_e::egl_ok) {
++                BOOST_LOG(info) << "CUDA DMABUF: EGL import OK"sv;
++              }
++              dmabuf_path = dmabuf_path_e::egl_ok;
++              auto &entry = rgb_cache[rgb_cache_slot];
++              entry.buffer_key = descriptor.dmabuf_buffer_key;
++              entry.rgb = std::move(*rgb_opt);
++              active_rgb = &entry.rgb;
++              rgb_cache_slot = (rgb_cache_slot + 1) % rgb_cache.size();
++              filled = true;
++            } else {
++              egl_import_disabled = true;
++              BOOST_LOG(warning) << "CUDA DMABUF: EGL import failed; mmap fallback for session"sv;
++            }
+           }
+ 
+-          auto &entry = rgb_cache[rgb_cache_slot];
+-          entry.buffer_key = descriptor.dmabuf_buffer_key;
+-          entry.rgb = std::move(*rgb_opt);
+-          active_rgb = &entry.rgb;
+-          rgb_cache_slot = (rgb_cache_slot + 1) % rgb_cache.size();
++          // Fallback: mmap → TexSubImage (CPU). Visible when zero-copy unsupported.
++          if (!filled &&
++              sd.fds[0] >= 0 && sd.width > 0 && sd.height > 0 &&
++              sd.pitches[0] >= (std::uint32_t) sd.width * 4) {
++            const size_t map_size = static_cast<size_t>(sd.offsets[0]) +
++              static_cast<size_t>(sd.pitches[0]) * static_cast<size_t>(sd.height);
++            void *map = mmap(nullptr, map_size, PROT_READ, MAP_SHARED, sd.fds[0], 0);
++            if (map != MAP_FAILED) {
++              auto rgb = egl::create_blank(img);
++              gl::ctx.BindTexture(GL_TEXTURE_2D, rgb->tex[0]);
++              gl::ctx.PixelStorei(GL_UNPACK_ROW_LENGTH, sd.pitches[0] / 4);
++              gl::ctx.TexSubImage2D(
++                GL_TEXTURE_2D, 0, 0, 0, sd.width, sd.height,
++                GL_BGRA, GL_UNSIGNED_BYTE,
++                static_cast<uint8_t *>(map) + sd.offsets[0]
++              );
++              gl::ctx.PixelStorei(GL_UNPACK_ROW_LENGTH, 0);
++              gl::ctx.BindTexture(GL_TEXTURE_2D, 0);
++              munmap(map, map_size);
++              if (dmabuf_path != dmabuf_path_e::mmap_cpu) {
++                BOOST_LOG(warning) << "CUDA DMABUF: CPU mmap→GL fallback "sv
++                                   << sd.width << "x"sv << sd.height
++                                   << " pitch="sv << sd.pitches[0];
++                dmabuf_path = dmabuf_path_e::mmap_cpu;
++              }
++              auto &entry = rgb_cache[rgb_cache_slot];
++              entry.buffer_key = descriptor.dmabuf_buffer_key;
++              entry.rgb = std::move(rgb);
++              active_rgb = &entry.rgb;
++              rgb_cache_slot = (rgb_cache_slot + 1) % rgb_cache.size();
++              filled = true;
++            }
++          }
++
++          if (!filled) {
++            return -1;
++          }
+         }
+ 
+         active_buffer_key = descriptor.dmabuf_buffer_key;
+@@ -443,7 +518,7 @@
+           active_rgb = &blank_rgb;
+         } else {
+           for (auto &entry : rgb_cache) {
+-            if (entry.buffer_key == active_buffer_key && entry.rgb.el.xrgb8 != EGL_NO_IMAGE) {
++            if (entry.buffer_key == active_buffer_key && entry.rgb->tex[0] != 0) {
+               active_rgb = &entry.rgb;
+               break;
+             }
+@@ -462,17 +537,14 @@
+         return -1;
+       }
+ 
+-      // Perform the color conversion and scaling in GL
+       sws.load_vram(descriptor, offset_x, offset_y, (*active_rgb)->tex[0]);
+       sws.convert(nv12->buf);
+ 
+       auto fmt_desc = av_pix_fmt_desc_get(sw_format);
+ 
+-      // Map the GL textures to read for CUDA
+       CUgraphicsResource resources[2] = {y_res.get(), uv_res.get()};
+       CU_CHECK(cdf->cuGraphicsMapResources(2, resources, stream.get()), "Couldn't map GL textures in CUDA");
+ 
+-      // Copy from the GL textures to the target CUDA frame
+       for (int i = 0; i < 2; i++) {
+         CUDA_MEMCPY2D cpy = {};
+         cpy.srcMemoryType = CU_MEMORYTYPE_ARRAY;
+@@ -487,7 +559,6 @@
+         CU_CHECK_IGNORE(cdf->cuMemcpy2DAsync(&cpy, stream.get()), "Couldn't copy texture to CUDA frame");
+       }
+ 
+-      // Unmap the textures to allow modification from GL again
+       CU_CHECK(cdf->cuGraphicsUnmapResources(2, resources, stream.get()), "Couldn't unmap GL textures from CUDA");
+       return 0;
+     }
+@@ -520,6 +591,11 @@
+     std::size_t rgb_cache_slot {0};
+     std::uint64_t active_buffer_key {0};
+ 
++    enum class dmabuf_path_e { unknown, egl_ok, mmap_cpu };
++    dmabuf_path_e dmabuf_path {dmabuf_path_e::unknown};
++    bool egl_import_disabled {false};
++    CUcontext cu_context {nullptr};
++
+     registered_resource_t y_res;
+     registered_resource_t uv_res;
+ 

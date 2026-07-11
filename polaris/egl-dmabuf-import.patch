@@ -1,0 +1,147 @@
+From: luxusAi
+Subject: egl: bare-tex + TexStorageEXT for NVIDIA gamescope dmabuf
+
+Import path that works on NVIDIA+gamescope. TexStorageEXT only; LINEAR retry.
+
+--- a/src/platform/linux/graphics.cpp
++++ b/src/platform/linux/graphics.cpp
+@@ -27,6 +27,8 @@
+ #define fourcc_code(a, b, c, d) ((std::uint32_t) (a) | ((std::uint32_t) (b) << 8) | ((std::uint32_t) (c) << 16) | ((std::uint32_t) (d) << 24))
+ #define fourcc_mod_code(vendor, val) ((((uint64_t) vendor) << 56) | ((val) & 0x00ffffffffffffffULL))
+ #define DRM_FORMAT_MOD_INVALID fourcc_mod_code(0, ((1ULL << 56) - 1))
++#define DRM_FORMAT_MOD_LINEAR 0ULL
++#define DRM_FORMAT_XRGB8888 fourcc_code('X', 'R', '2', '4')
+ 
+ #if !defined(POLARIS_SHADERS_DIR)  // for testing this needs to be defined in cmake as we don't do an install
+   #define POLARIS_SHADERS_DIR POLARIS_ASSETS_DIR "/shaders/opengl"
+@@ -570,33 +572,119 @@
+     return attribs;
+   }
+ 
+-  std::optional<rgb_t> import_source(display_t::pointer egl_display, const surface_descriptor_t &xrgb) {
++  // Bare texture (no TexParameteri first) — NVIDIA returns GL 0x502 if the
++  // texture already has sampler state when targeting a DMA-BUF EGLImage.
++  static gl::tex_t make_bare_tex() {
++    gl::tex_t textures {1};
++    gl::ctx.GenTextures(textures.size(), textures.begin());
++    return textures;
++  }
++
++  static void finish_tex_params(GLuint tex) {
++    gl::ctx.BindTexture(GL_TEXTURE_2D, tex);
++    gl::ctx.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++    gl::ctx.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++    gl::ctx.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
++    gl::ctx.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
++    gl::ctx.BindTexture(GL_TEXTURE_2D, 0);
++  }
++
++  static bool gl_clear_errors() {
++    bool bad = false;
++    GLenum err;
++    while ((err = gl::ctx.GetError()) != GL_NO_ERROR) {
++      bad = true;
++    }
++    return !bad;
++  }
++
++  std::optional<rgb_t> import_source_once(display_t::pointer egl_display, const surface_descriptor_t &xrgb, const char *tag) {
+     auto attribs = surface_descriptor_to_egl_attribs(xrgb);
++#ifndef EGL_IMAGE_PRESERVED_KHR
++  #define EGL_IMAGE_PRESERVED_KHR 0x30D2
++#endif
++    if (!attribs.empty() && attribs.back() == EGL_NONE) {
++      attribs.pop_back();
++      attribs.emplace_back(EGL_IMAGE_PRESERVED_KHR);
++      attribs.emplace_back(EGL_TRUE);
++      attribs.emplace_back(EGL_NONE);
++    }
++
++    auto image = eglCreateImage(egl_display, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs.data());
++    if (!image) {
++      BOOST_LOG(warning) << "EGL import "sv << tag << " eglCreateImage failed egl="sv
++                         << util::hex(eglGetError()).to_string_view()
++                         << " "sv << xrgb.width << "x"sv << xrgb.height
++                         << " fourcc=0x"sv << util::hex(xrgb.fourcc).to_string_view()
++                         << " modifier=0x"sv << util::hex(xrgb.modifier).to_string_view()
++                         << " pitch="sv << xrgb.pitches[0];
++      return std::nullopt;
++    }
+ 
+     rgb_t rgb {
+       egl_display,
+-      eglCreateImage(egl_display, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs.data()),
+-      gl::tex_t::make(1)
++      image,
++      make_bare_tex()
+     };
+ 
+-    if (!rgb->xrgb8) {
+-      BOOST_LOG(error) << "Couldn't import RGB Image: "sv << util::hex(eglGetError()).to_string_view();
++    gl::ctx.BindTexture(GL_TEXTURE_2D, rgb->tex[0]);
++    gl_clear_errors();
+ 
+-      return std::nullopt;
++    using TexStorageFn = void (*)(GLenum, void *, const int *);
++    static TexStorageFn tex_storage = nullptr;
++    static bool tex_storage_resolved = false;
++    if (!tex_storage_resolved) {
++      tex_storage = (TexStorageFn) eglGetProcAddress("glEGLImageTargetTexStorageEXT");
++      tex_storage_resolved = true;
+     }
+ 
+-    gl::ctx.BindTexture(GL_TEXTURE_2D, rgb->tex[0]);
+-    gl::ctx.EGLImageTargetTexture2DOES(GL_TEXTURE_2D, rgb->xrgb8);
+-
++    if (!tex_storage) {
++      BOOST_LOG(warning) << "EGL import "sv << tag << " glEGLImageTargetTexStorageEXT missing"sv;
++      return std::nullopt;
++    }
++    tex_storage(GL_TEXTURE_2D, rgb->xrgb8, nullptr);
+     gl::ctx.BindTexture(GL_TEXTURE_2D, 0);
+-
+-    if (gl_drain_errors) {
++    if (!gl_clear_errors()) {
++      BOOST_LOG(warning) << "EGL import "sv << tag << " TexStorageEXT failed "sv
++                         << xrgb.width << "x"sv << xrgb.height
++                         << " fourcc=0x"sv << util::hex(xrgb.fourcc).to_string_view()
++                         << " pitch="sv << xrgb.pitches[0];
+       return std::nullopt;
+     }
+ 
++    finish_tex_params(rgb->tex[0]);
++    static bool logged_ok = false;
++    if (!logged_ok) {
++      BOOST_LOG(info) << "EGL import "sv << tag << " OK via TexStorageEXT "sv
++                      << xrgb.width << "x"sv << xrgb.height
++                      << " fourcc=0x"sv << util::hex(xrgb.fourcc).to_string_view()
++                      << " pitch="sv << xrgb.pitches[0]
++                      << " (once)"sv;
++      logged_ok = true;
++    }
+     return rgb;
+   }
+ 
++  std::optional<rgb_t> import_source(display_t::pointer egl_display, const surface_descriptor_t &xrgb) {
++    // NVIDIA+gamescope: bare tex + TexStorageEXT. LINEAR if as-is fails.
++    if (auto rgb = import_source_once(egl_display, xrgb, "as-is")) {
++      return rgb;
++    }
++    if (xrgb.modifier != DRM_FORMAT_MOD_LINEAR) {
++      surface_descriptor_t lin = xrgb;
++      lin.modifier = DRM_FORMAT_MOD_LINEAR;
++      if (auto rgb = import_source_once(egl_display, lin, "LINEAR")) {
++        return rgb;
++      }
++    }
++    BOOST_LOG(error) << "Couldn't import RGB DMA-BUF "sv
++                     << xrgb.width << "x"sv << xrgb.height
++                     << " fourcc=0x"sv << util::hex(xrgb.fourcc).to_string_view()
++                     << " modifier=0x"sv << util::hex(xrgb.modifier).to_string_view()
++                     << " pitch="sv << xrgb.pitches[0];
++    return std::nullopt;
++  }
++
+   /**
+    * @brief Create a black RGB texture of the specified image size.
+    * @param img The image to use for texture sizing.

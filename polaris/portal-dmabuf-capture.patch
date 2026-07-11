@@ -1,0 +1,656 @@
+From: luxusAi
+Subject: portal: DmaBuf GPU capture, 10-bit prefer, no forced CPU mmap
+
+PipeWire portal: prefer DmaBuf, xBGR_210LE first, LINEAR modifier,
+skip 4K mmap on GPU path, fd-keyed buffer cache, first-frame diagnostics.
+
+--- a/src/platform/linux/portal_grab.cpp
++++ b/src/platform/linux/portal_grab.cpp
+@@ -7,7 +7,10 @@
+  * for the Polaris cage-as-window architecture.
+  */
+ 
++#include <algorithm>
+ #include <atomic>
++#include <climits>
++#include <limits>
+ #include <chrono>
+ #include <cstdlib>
+ #include <cstring>
+@@ -19,8 +22,11 @@
+ #include <thread>
+ #include <vector>
+ 
++#include <drm_fourcc.h>
++#include <fcntl.h>
+ #include <poll.h>
+ #include <sys/mman.h>
++#include <unistd.h>
+ 
+ #include <gio/gio.h>
+ #include <wayland-client.h>
+@@ -31,14 +37,18 @@
+ #include <spa/param/video/type-info.h>
+ #include <spa/debug/types.h>
+ #include <spa/param/video/format.h>
++#include <spa/pod/builder.h>
+ #include <spa/utils/result.h>
+ 
+ #include "src/config.h"
+ #include "src/logging.h"
++#include "src/utility.h"
+ #include "src/platform/common.h"
++#include "src/stream_stats.h"
+ #include "src/video.h"
+ 
+ #include "src/platform/linux/cage_display_router.h"
++#include "src/platform/linux/graphics.h"
+ 
+ #ifdef POLARIS_BUILD_CUDA
+   #include "src/platform/linux/cuda.h"
+@@ -431,8 +441,69 @@
+ 
+   // -----------------------------------------------------------------------
+   // PipeWire frame capture
++  //
++  // Prefer DMA-BUF (GPU-resident) when the portal/compositor exports it so the
++  // CUDA/VAAPI path can import via EGL without a system-memory copy. Fall back
++  // to MemPtr/SHM when DMA-BUF is unavailable (same behaviour as before).
+   // -----------------------------------------------------------------------
+ 
++  static uint32_t spa_format_to_drm_fourcc(uint32_t spa_fmt) {
++    switch (spa_fmt) {
++      case SPA_VIDEO_FORMAT_BGRx:
++        return DRM_FORMAT_XRGB8888;
++      case SPA_VIDEO_FORMAT_BGRA:
++        return DRM_FORMAT_ARGB8888;
++      case SPA_VIDEO_FORMAT_RGBx:
++        return DRM_FORMAT_XBGR8888;
++      case SPA_VIDEO_FORMAT_RGBA:
++        return DRM_FORMAT_ABGR8888;
++      case SPA_VIDEO_FORMAT_xBGR_210LE:
++        return DRM_FORMAT_XBGR2101010;
++      default:
++        return 0;
++    }
++  }
++
++  static platf::frame_format_e spa_format_to_frame_format(uint32_t spa_fmt) {
++    switch (spa_fmt) {
++      case SPA_VIDEO_FORMAT_BGRx:
++      case SPA_VIDEO_FORMAT_BGRA:
++      case SPA_VIDEO_FORMAT_RGBx:
++      case SPA_VIDEO_FORMAT_RGBA:
++        return platf::frame_format_e::bgra8;
++      case SPA_VIDEO_FORMAT_xBGR_210LE:
++        // 10-bit packed RGB (HDR path). Stats as p010-class source.
++        return platf::frame_format_e::p010;
++      default:
++        return platf::frame_format_e::unknown;
++    }
++  }
++
++  struct pw_frame_t {
++    bool is_dmabuf = false;
++    int width = 0;
++    int height = 0;
++    int stride = 0;
++    std::vector<uint8_t> cpu_data;
++    egl::surface_descriptor_t sd {};
++    std::uint64_t buffer_key = 0;
++    uint32_t spa_format = SPA_VIDEO_FORMAT_UNKNOWN;
++
++    void release() {
++      if (is_dmabuf) {
++        for (int i = 0; i < 4; ++i) {
++          if (sd.fds[i] >= 0) {
++            close(sd.fds[i]);
++            sd.fds[i] = -1;
++          }
++        }
++      }
++      cpu_data.clear();
++      is_dmabuf = false;
++      buffer_key = 0;
++    }
++  };
++
+   struct pw_capture_t {
+     struct pw_thread_loop *pw_loop = nullptr;
+     struct pw_stream *pw_stream_handle = nullptr;
+@@ -440,38 +511,165 @@
+     int frame_width = 0;
+     int frame_height = 0;
+     uint32_t frame_stride = 0;
++    uint32_t spa_format = SPA_VIDEO_FORMAT_UNKNOWN;
++    uint64_t spa_modifier = DRM_FORMAT_MOD_INVALID;
++    bool spa_has_modifier = false;
+ 
+     std::mutex frame_mtx;
+-    std::vector<uint8_t> frame_data;
++    pw_frame_t latest;
+     bool frame_available = false;
+     std::condition_variable frame_cv;
++    std::uint64_t frame_seq = 0;
++    std::atomic<bool> saw_dmabuf {false};
++    std::atomic<bool> saw_memptr {false};
+ 
+-    std::atomic<bool> running{false};
+-    std::atomic<bool> negotiated{false};
++    // Legacy CPU buffer accessors used by MemPtr path helpers
++    std::vector<uint8_t> frame_data;
++
++    std::atomic<bool> running {false};
++    std::atomic<bool> negotiated {false};
+ 
+     ~pw_capture_t() {
+-      if (pw_loop) pw_thread_loop_stop(pw_loop);
+-      if (pw_stream_handle) pw_stream_destroy(pw_stream_handle);
+-      if (pw_loop) pw_thread_loop_destroy(pw_loop);
++      // Stop the loop first so process/param callbacks cannot run during teardown.
++      running = false;
++      if (pw_loop) {
++        pw_thread_loop_stop(pw_loop);
++      }
++      if (pw_stream_handle) {
++        pw_stream_destroy(pw_stream_handle);
++        pw_stream_handle = nullptr;
++      }
++      {
++        std::lock_guard lk(frame_mtx);
++        latest.release();
++      }
++      if (pw_loop) {
++        pw_thread_loop_destroy(pw_loop);
++        pw_loop = nullptr;
++      }
+     }
+   };
+ 
+   static void on_process(void *userdata) {
+     auto *cap = static_cast<pw_capture_t *>(userdata);
+     struct pw_buffer *b = pw_stream_dequeue_buffer(cap->pw_stream_handle);
+-    if (!b) return;
++    if (!b || !b->buffer || b->buffer->n_datas < 1) {
++      if (b) {
++        pw_stream_queue_buffer(cap->pw_stream_handle, b);
++      }
++      return;
++    }
+ 
+     struct spa_buffer *buf = b->buffer;
+-    if (!buf->datas[0].data || buf->datas[0].chunk->size == 0) {
++    struct spa_data *d0 = &buf->datas[0];
++    if (!d0->chunk || d0->chunk->size == 0) {
++      pw_stream_queue_buffer(cap->pw_stream_handle, b);
++      return;
++    }
++
++    pw_frame_t next;
++    next.width = cap->frame_width;
++    next.height = cap->frame_height;
++    next.stride = d0->chunk->stride > 0 ? d0->chunk->stride : cap->frame_width * 4;
++    next.spa_format = cap->spa_format;
++
++    if (d0->type == SPA_DATA_DmaBuf && d0->fd >= 0) {
++      const uint32_t fourcc = spa_format_to_drm_fourcc(cap->spa_format);
++      // XBGR2101010 is imported via EGL TexStorageEXT as 10-bit UNORM (same path
++      // as BGRx). Reject only unknown fourccs.
++      if (fourcc == 0) {
++        static bool once = false;
++        if (!once) {
++          BOOST_LOG(warning) << "portal: DmaBuf unknown spa_format="sv << cap->spa_format
++                             << " — dropping until format is mapped"sv;
++          once = true;
++        }
++        pw_stream_queue_buffer(cap->pw_stream_handle, b);
++        return;
++      }
++
++      int dup_fd = fcntl(d0->fd, F_DUPFD_CLOEXEC, 0);
++      if (dup_fd < 0) {
++        pw_stream_queue_buffer(cap->pw_stream_handle, b);
++        return;
++      }
++
++      next.is_dmabuf = true;
++      next.sd.width = cap->frame_width;
++      next.sd.height = cap->frame_height;
++      next.sd.fourcc = fourcc;
++      // gamescope always exports linear when DmaBuf; without a fixated modifier
++      // prop, INVALID skips EGL modifier attrs and NVIDIA fails
++      // EGLImageTargetTexture2DOES with GL 0x502 (INVALID_OPERATION).
++      next.sd.modifier = cap->spa_has_modifier ? cap->spa_modifier : DRM_FORMAT_MOD_LINEAR;
++      std::fill_n(next.sd.fds, 4, -1);
++      std::fill_n(next.sd.pitches, 4, 0);
++      std::fill_n(next.sd.offsets, 4, 0);
++      next.sd.fds[0] = dup_fd;
++      next.sd.pitches[0] = next.stride;
++      next.sd.offsets[0] = d0->chunk->offset;
++
++      // CPU mirror only when GPU path is forced off. Full 4K mmap+memcpy every
++      // frame (~2GB/s) was burning CPU while the GPU path never used cpu_data.
++      const char *dmabuf_env = std::getenv("POLARIS_PORTAL_DMABUF");
++      const bool force_cpu = dmabuf_env && dmabuf_env[0] == '0' && dmabuf_env[1] == '\0';
++      if (force_cpu &&
++          (next.sd.modifier == DRM_FORMAT_MOD_INVALID || next.sd.modifier == DRM_FORMAT_MOD_LINEAR)) {
++        const size_t map_size = static_cast<size_t>(d0->chunk->offset) + d0->chunk->size;
++        void *map = mmap(nullptr, map_size, PROT_READ, MAP_SHARED, d0->fd, 0);
++        if (map != MAP_FAILED) {
++          next.cpu_data.resize(d0->chunk->size);
++          std::memcpy(next.cpu_data.data(),
++            static_cast<uint8_t *>(map) + d0->chunk->offset, d0->chunk->size);
++          munmap(map, map_size);
++        }
++      }
++
++      // Stable key for EGL RGB cache: gamescope reuses a small PW buffer pool;
++      // keying by frame_seq forced a full eglCreateImage every frame.
++      next.buffer_key = (static_cast<std::uint64_t>(static_cast<std::uint32_t>(d0->fd)) << 1) | 1ull;
++
++      cap->saw_dmabuf.store(true, std::memory_order_relaxed);
++    }
++    else if ((d0->type == SPA_DATA_MemPtr || d0->type == SPA_DATA_MemFd) && d0->data) {
++      next.is_dmabuf = false;
++      next.cpu_data.resize(d0->chunk->size);
++      std::memcpy(next.cpu_data.data(), static_cast<uint8_t *>(d0->data) + d0->chunk->offset, d0->chunk->size);
++      cap->saw_memptr.store(true, std::memory_order_relaxed);
++    }
++    else {
+       pw_stream_queue_buffer(cap->pw_stream_handle, b);
+       return;
+     }
+ 
+-    uint32_t size = buf->datas[0].chunk->size;
+     {
+       std::lock_guard lk(cap->frame_mtx);
+-      cap->frame_data.resize(size);
+-      std::memcpy(cap->frame_data.data(), buf->datas[0].data, size);
++      const bool is_dmabuf = next.is_dmabuf;
++      const uint32_t spa_fmt = next.spa_format;
++      const int w = next.width;
++      const int h = next.height;
++      cap->latest.release();
++      // MemPtr/MemFd: sequence key. DmaBuf: already set from producer fd above.
++      if (!next.is_dmabuf || next.buffer_key == 0) {
++        next.buffer_key = ++cap->frame_seq;
++      } else {
++        ++cap->frame_seq;  // still count frames for first-frame log
++      }
++      cap->latest = std::move(next);
++      if (!cap->latest.is_dmabuf) {
++        cap->frame_data = cap->latest.cpu_data;
++      }
++      if (cap->frame_seq == 1) {
++        const uint32_t fourcc = spa_format_to_drm_fourcc(spa_fmt);
++        const char *depth = (fourcc == DRM_FORMAT_XBGR2101010) ? "10-bit" : "8-bit";
++        const char *kind = is_dmabuf ? "DmaBuf" : "MemPtr";
++        BOOST_LOG(info) << "portal: first frame type="sv << kind
++                        << " "sv << w << "x"sv << h
++                        << " "sv << depth
++                        << " fourcc=0x"sv << util::hex(fourcc).to_string_view()
++                        << " pitch="sv << (is_dmabuf ? cap->latest.sd.pitches[0] : 0)
++                        << " cpu_copy="sv << (is_dmabuf && !cap->latest.cpu_data.empty() ? "1" : "0");
++      }
+       cap->frame_available = true;
+       cap->frame_cv.notify_one();
+     }
+@@ -481,32 +679,64 @@
+ 
+   static void on_param_changed(void *userdata, uint32_t id, const struct spa_pod *param) {
+     auto *cap = static_cast<pw_capture_t *>(userdata);
+-    if (!param || id != SPA_PARAM_Format) return;
++    if (!param || id != SPA_PARAM_Format) {
++      return;
++    }
+ 
+-    uint32_t media_type, media_subtype;
+-    if (spa_format_parse(param, &media_type, &media_subtype) < 0) return;
+-    if (media_type != SPA_MEDIA_TYPE_video || media_subtype != SPA_MEDIA_SUBTYPE_raw) return;
++    uint32_t media_type = 0, media_subtype = 0;
++    if (spa_format_parse(param, &media_type, &media_subtype) < 0) {
++      return;
++    }
++    if (media_type != SPA_MEDIA_TYPE_video || media_subtype != SPA_MEDIA_SUBTYPE_raw) {
++      return;
++    }
+ 
+-    struct spa_video_info_raw raw_info;
++    struct spa_video_info_raw raw_info {};
+     spa_format_video_raw_parse(param, &raw_info);
+ 
+     cap->frame_width = raw_info.size.width;
+     cap->frame_height = raw_info.size.height;
+     cap->frame_stride = cap->frame_width * 4;
++    cap->spa_format = raw_info.format;
++#ifdef SPA_VIDEO_FLAG_MODIFIER
++    if (raw_info.flags & SPA_VIDEO_FLAG_MODIFIER) {
++      cap->spa_modifier = raw_info.modifier;
++      cap->spa_has_modifier = true;
++    }
++    else
++#endif
++    {
++      cap->spa_modifier = DRM_FORMAT_MOD_INVALID;
++      cap->spa_has_modifier = false;
++    }
+     cap->negotiated = true;
+ 
+     BOOST_LOG(info) << "portal: PipeWire format negotiated: "sv
+-                    << cap->frame_width << "x"sv << cap->frame_height;
++                    << cap->frame_width << "x"sv << cap->frame_height
++                    << " spa_format="sv << cap->spa_format
++                    << " drm_fourcc=0x"sv << util::hex(spa_format_to_drm_fourcc(cap->spa_format)).to_string_view()
++                    << (cap->spa_has_modifier ? " modifier=0x"sv : " no-modifier"sv)
++                    << (cap->spa_has_modifier ? util::hex(cap->spa_modifier).to_string_view() : ""sv);
++
++    // Dual-GPU (AMD DmaBuf → NVIDIA GL/NVENC) fails import (GL 0x0502).
++    // POLARIS_PORTAL_DMABUF=0 forces MemFd/MemPtr only so the CPU path gets pixels.
++    // Default: prefer DmaBuf when the producer can export it.
++    const char *dmabuf_env = std::getenv("POLARIS_PORTAL_DMABUF");
++    const bool force_cpu = dmabuf_env && dmabuf_env[0] == '0' && dmabuf_env[1] == '\0';
++    const int data_type = force_cpu
++      ? ((1 << SPA_DATA_MemFd) | (1 << SPA_DATA_MemPtr))
++      : ((1 << SPA_DATA_DmaBuf) | (1 << SPA_DATA_MemFd) | (1 << SPA_DATA_MemPtr));
+ 
+-    // Set buffer parameters
+     uint8_t params_buffer[1024];
+     struct spa_pod_builder pb = SPA_POD_BUILDER_INIT(params_buffer, sizeof(params_buffer));
+     const struct spa_pod *buf_param = (const struct spa_pod *) spa_pod_builder_add_object(
+       &pb,
+       SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers,
+       SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(4, 2, 8),
+-      SPA_PARAM_BUFFERS_dataType, SPA_POD_CHOICE_FLAGS_Int(1 << SPA_DATA_MemPtr));
++      SPA_PARAM_BUFFERS_dataType, SPA_POD_CHOICE_FLAGS_Int(data_type));
+ 
++    BOOST_LOG(info) << "portal: requesting buffer dataType="sv
++                    << (force_cpu ? "MemFd|MemPtr (CPU)"sv : "DmaBuf|MemFd|MemPtr"sv);
+     pw_stream_update_params(cap->pw_stream_handle, &buf_param, 1);
+   }
+ 
+@@ -529,6 +759,8 @@
+ 
+   static std::unique_ptr<pw_capture_t> start_pw_capture(uint32_t node_id, int req_w, int req_h) {
+     auto cap = std::make_unique<pw_capture_t>();
++    (void) req_w;
++    (void) req_h;
+ 
+     pw_init(nullptr, nullptr);
+ 
+@@ -556,17 +788,19 @@
+       return nullptr;
+     }
+ 
+-    // Accept any video format — let PipeWire/portal decide
++    // Prefer 10-bit when gamescope HDR offers it — avoids 8-bit DmaBuf → P010
++    // upconvert on the GL encode path (main cost at 4K/120). BGRx remains fallback.
++    // CHOICE_ENUM first value is the preferred default.
+     uint8_t params_buffer[1024];
+     struct spa_pod_builder pb = SPA_POD_BUILDER_INIT(params_buffer, sizeof(params_buffer));
+-
+     auto *fmt_param = (const struct spa_pod *) spa_pod_builder_add_object(
+       &pb,
+       SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat,
+       SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video),
+       SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw),
+-      SPA_FORMAT_VIDEO_format, SPA_POD_CHOICE_ENUM_Id(5,
+-        SPA_VIDEO_FORMAT_BGRx,
++      SPA_FORMAT_VIDEO_format, SPA_POD_CHOICE_ENUM_Id(6,
++        SPA_VIDEO_FORMAT_xBGR_210LE,
++        SPA_VIDEO_FORMAT_xBGR_210LE,
+         SPA_VIDEO_FORMAT_BGRx,
+         SPA_VIDEO_FORMAT_BGRA,
+         SPA_VIDEO_FORMAT_RGBx,
+@@ -575,7 +809,7 @@
+     if (pw_stream_connect(cap->pw_stream_handle,
+           PW_DIRECTION_INPUT,
+           node_id,
+-          (enum pw_stream_flags)(PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS),
++          (enum pw_stream_flags) (PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS),
+           &fmt_param, 1) < 0) {
+       BOOST_LOG(warning) << "portal: Failed to connect PipeWire stream to node "sv << node_id;
+       return nullptr;
+@@ -587,7 +821,8 @@
+     }
+ 
+     cap->running = true;
+-    BOOST_LOG(info) << "portal: PipeWire capture started on node "sv << node_id;
++    BOOST_LOG(info) << "portal: PipeWire capture started on node "sv << node_id
++                    << " (DmaBuf preferred, MemFd/MemPtr fallback)"sv;
+     return cap;
+   }
+ 
+@@ -985,9 +1220,14 @@
+     int cfg_width = 0;
+     int cfg_height = 0;
+     platf::mem_type_e mem_type = platf::mem_type_e::system;
++    std::uint64_t img_sequence = 0;
+ 
+     bool probe_only = false;  // true during encoder probe (skip portal session)
+ 
++    bool use_gpu_imgs() const {
++      return mem_type == platf::mem_type_e::cuda || mem_type == platf::mem_type_e::vaapi;
++    }
++
+     int
+     init(platf::mem_type_e hwdevice_type, const std::string &display_name, const ::video::config_t &config) {
+       cfg_width = config.width;
+@@ -1112,21 +1352,72 @@
+           return platf::capture_e::interrupted;
+         }
+ 
+-        // Copy frame
+-        int copy_h = std::min(cap->frame_height, img_out->height);
+-        int copy_w = std::min(cap->frame_width, img_out->width);
+-        int src_stride = cap->frame_width * 4;
+-        int dst_stride = img_out->row_pitch;
++        auto frame_timestamp = std::chrono::steady_clock::now();
+ 
+-        for (int y = 0; y < copy_h; ++y) {
+-          std::memcpy(
+-            img_out->data + y * dst_stride,
+-            cap->frame_data.data() + y * src_stride,
+-            copy_w * 4);
++        // DMA-BUF → GPU descriptor only when we allocated a GPU img (data==nullptr).
++        // CPU img + DmaBuf without cpu_data: drop (request MemFd via POLARIS_PORTAL_DMABUF=0).
++        if (cap->latest.is_dmabuf && use_gpu_imgs() && img_out->data == nullptr) {
++          auto *img = static_cast<egl::img_descriptor_t *>(img_out.get());
++          img->reset();
++          img->width = cap->latest.width;
++          img->height = cap->latest.height;
++          img->sd = cap->latest.sd;
++          std::fill_n(cap->latest.sd.fds, 4, -1);
++          img->sequence = ++img_sequence;
++          img->dmabuf_buffer_key = cap->latest.buffer_key;
++          img->frame_timestamp = frame_timestamp;
++          img->frame_metadata = {
++            .transport = platf::frame_transport_e::dmabuf,
++            .residency = platf::frame_residency_e::gpu,
++            .format = spa_format_to_frame_format(cap->latest.spa_format),
++          };
++          stream_stats::update_capture_metadata(img->frame_metadata);
++        }
++        else {
++          // MemPtr / MemFd CPU path (known-good video). Also used when DMA-BUF
++          // was downloaded into cpu_data in on_process.
++          if (!img_out->data) {
++            // GPU descriptor with only MemPtr frames → cannot paint; skip.
++            static bool warned_memptr = false;
++            if (!warned_memptr) {
++              BOOST_LOG(warning)
++                << "portal: MemPtr frames with GPU image descriptors — "
++                   "encoder should use the system-memory path; dropping until reinit"sv;
++              warned_memptr = true;
++            }
++            cap->frame_available = false;
++            lk.unlock();
++            continue;
++          }
++
++          if (cap->latest.cpu_data.empty()) {
++            cap->frame_available = false;
++            lk.unlock();
++            continue;
++          }
++
++          int copy_h = std::min(cap->latest.height, img_out->height);
++          int copy_w = std::min(cap->latest.width, img_out->width);
++          int src_stride = cap->latest.stride > 0 ? cap->latest.stride : cap->latest.width * 4;
++          int dst_stride = img_out->row_pitch;
++          const auto *src = cap->latest.cpu_data.data();
++          const int row_bytes = std::min(copy_w * 4, src_stride);
++          for (int y = 0; y < copy_h; ++y) {
++            std::memcpy(img_out->data + y * dst_stride, src + y * src_stride, row_bytes);
++          }
++          img_out->frame_timestamp = frame_timestamp;
++          img_out->frame_metadata = {
++            .transport = platf::frame_transport_e::shm,
++            .residency = platf::frame_residency_e::cpu,
++            .format = platf::frame_format_e::bgra8,
++          };
++          stream_stats::update_capture_metadata(img_out->frame_metadata);
+         }
+ 
+-        img_out->frame_timestamp = std::chrono::steady_clock::now();
+         cap->frame_available = false;
++        if (!cap->latest.is_dmabuf) {
++          cap->latest.cpu_data.clear();
++        }
+         lk.unlock();
+ 
+         if (!push_captured_image_cb(std::move(img_out), true)) {
+@@ -1137,28 +1428,107 @@
+       return platf::capture_e::error;
+     }
+ 
++    // GPU descriptors when cuda/vaapi. Default on; POLARIS_PORTAL_DMABUF=0 forces CPU.
++    // Needs gamescope-hdr pipewire-prefer-dmabuf (or any DmaBuf producer).
++    bool want_dmabuf_gpu() const {
++      if (!use_gpu_imgs()) {
++        return false;
++      }
++      const char *e = std::getenv("POLARIS_PORTAL_DMABUF");
++      if (e && e[0] == '0' && e[1] == '\0') {
++        return false;
++      }
++      return true;
++    }
++
+     std::shared_ptr<platf::img_t>
+     alloc_img() override {
+-      auto img = std::make_shared<platf::img_t>();
++      if (want_dmabuf_gpu()) {
++        auto img = std::make_shared<egl::img_descriptor_t>();
++        img->width = cfg_width;
++        img->height = cfg_height;
++        img->pixel_pitch = 4;
++        img->row_pitch = cfg_width * 4;
++        img->data = nullptr;
++        img->sequence = 0;
++        img->serial = std::numeric_limits<decltype(img->serial)>::max();
++        img->dmabuf_buffer_key = 0;
++        std::fill_n(img->sd.fds, 4, -1);
++
++        BOOST_LOG(info) << "portal: alloc_img (GPU/DMA-BUF descriptor) "sv
++                        << img->width << "x"sv << img->height
++                        << " env="sv << this->env_width << "x"sv << this->env_height;
++        return img;
++      }
+ 
++      auto img = std::make_shared<platf::img_t>();
+       img->width = cfg_width;
+       img->height = cfg_height;
+       img->pixel_pitch = 4;
+       img->row_pitch = cfg_width * 4;
+       img->data = new uint8_t[cfg_height * img->row_pitch]();
+ 
+-      BOOST_LOG(info) << "portal: alloc_img "sv << img->width << "x"sv << img->height
++      BOOST_LOG(info) << "portal: alloc_img (CPU/MemPtr) "sv << img->width << "x"sv << img->height
+                       << " env="sv << this->env_width << "x"sv << this->env_height;
+       return img;
+     }
+ 
+     int
+     dummy_img(platf::img_t *img) override {
+-      if (!img || !img->data) return -1;
++      if (!img) {
++        return -1;
++      }
++      // GPU descriptors use sequence 0 + blank texture in the GL converter.
++      if (!img->data) {
++        return 0;
++      }
+       std::memset(img->data, 0, img->height * img->row_pitch);
+       return 0;
+     }
+ 
++    // Gamescope headless HDR (IceDOS / polaris#152): polaris runs with
++    // XDG_CURRENT_DESKTOP=gamescope so ScreenCast uses xdg-desktop-portal-gamescope
++    // against gamescope-0. Portal capture has no DRM HDR_OUTPUT_METADATA blob;
++    // synthesize usable static metadata matching gamescope's headless EDID.
++    static bool gamescope_hdr_session() {
++      if (const char *d = std::getenv("XDG_CURRENT_DESKTOP"); d && std::strcmp(d, "gamescope") == 0) {
++        return true;
++      }
++      if (const char *g = std::getenv("GAMESCOPE_WAYLAND_DISPLAY"); g && *g) {
++        return true;
++      }
++      return false;
++    }
++
++    bool is_hdr() override {
++      return gamescope_hdr_session();
++    }
++
++    bool get_hdr_metadata(SS_HDR_METADATA &metadata) override {
++      if (!gamescope_hdr_session()) {
++        std::memset(&metadata, 0, sizeof(metadata));
++        return false;
++      }
++
++      // Rec.2020 primaries + D65, units = CIE xy * 50000 (same as DXGI path).
++      // Mastering luminance matches gamescope headless HDR EDID (1000 nits).
++      std::memset(&metadata, 0, sizeof(metadata));
++      metadata.displayPrimaries[0].x = static_cast<std::uint16_t>(0.708f * 50000);
++      metadata.displayPrimaries[0].y = static_cast<std::uint16_t>(0.292f * 50000);
++      metadata.displayPrimaries[1].x = static_cast<std::uint16_t>(0.170f * 50000);
++      metadata.displayPrimaries[1].y = static_cast<std::uint16_t>(0.797f * 50000);
++      metadata.displayPrimaries[2].x = static_cast<std::uint16_t>(0.131f * 50000);
++      metadata.displayPrimaries[2].y = static_cast<std::uint16_t>(0.046f * 50000);
++      metadata.whitePoint.x = static_cast<std::uint16_t>(0.3127f * 50000);
++      metadata.whitePoint.y = static_cast<std::uint16_t>(0.3290f * 50000);
++      metadata.maxDisplayLuminance = 1000;
++      metadata.minDisplayLuminance = 1;
++      metadata.maxContentLightLevel = 1000;
++      metadata.maxFrameAverageLightLevel = 400;
++      metadata.maxFullFrameLuminance = 1000;
++      return true;
++    }
++
+     std::unique_ptr<platf::avcodec_encode_device_t>
+     make_avcodec_encode_device(platf::pix_fmt_e pix_fmt) override {
+       int w = cfg_width;
+@@ -1166,15 +1536,22 @@
+ 
+ #ifdef POLARIS_BUILD_VAAPI
+       if (mem_type == platf::mem_type_e::vaapi) {
++        if (want_dmabuf_gpu()) {
++          return va::make_avcodec_encode_device(w, h, 0, 0, true);
++        }
+         return va::make_avcodec_encode_device(w, h, false);
+       }
+ #endif
+ #ifdef POLARIS_BUILD_CUDA
+       if (mem_type == platf::mem_type_e::cuda) {
++        if (want_dmabuf_gpu()) {
++          (void) pix_fmt;
++          return cuda::make_avcodec_gl_encode_device(w, h, 0, 0);
++        }
++        // NV12: RAM→CUDA. P010/HDR: empty device → software convert (cuda_t is NV12-only).
+         if (pix_fmt == platf::pix_fmt_e::nv12) {
+           return cuda::make_avcodec_encode_device(w, h, false);
+         }
+-
+         return std::make_unique<platf::avcodec_encode_device_t>();
+       }
+ #endif
