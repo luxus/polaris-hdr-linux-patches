@@ -14,10 +14,11 @@ Developed in [luxus/luxusAi](https://github.com/luxus/luxusAi) for machine **lea
 The gamescope + patched polaris path **works** for 4K HDR encode (DmaBuf `XB30`, NVENC ~8 ms, convert ~1 ms), but:
 
 - HDR **color** can look washed vs HDMI ([notes](docs/polaris-hdr-color.md))
-- Stack is heavy (custom gamescope, portal, idle session)
-- Next experiment: **physical 4K HDR dummy** on the 4090 + KWin capture (simpler display path)
+- Stack is heavy (custom gamescope, private portal, idle unit)
+- Encode ~8–9 ms at 4K HDR (60 Hz OK; 120 tight); HDR color still not HDMI-like
+- Daily lea stream is back on stock Polaris **labwc** SDR (DMA-BUF, ~4.5–5 ms encode @ 4K60)
 
-Patches stay here so they are not lost and can be offered upstream / rebased later.
+Patches stay here as reference for polaris#152 / rebased consumer work.
 
 ## Layout
 
@@ -69,5 +70,5 @@ Distribute patches under the same terms as the upstream trees you apply them to.
 ## Resume checklist
 
 1. Rebase onto current polaris / gamescope tips  
-2. Re-test DmaBuf first frame + HDR metadata  
-3. Decide: keep for gamescope path vs drop if KWin+dummy HDR is good enough  
+2. Re-test DmaBuf first frame + HDR metadata against maintainer branch `perf/issue-152-pipewire-capture`  
+3. Color fidelity (PQ / matrix) separate from capture transport  

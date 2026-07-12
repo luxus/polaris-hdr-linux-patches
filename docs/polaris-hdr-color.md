@@ -2,7 +2,8 @@
 
 **Status:** deferred follow-up — capture/perf path is usable; color fidelity is not HDMI-like.  
 **Tracking:** [#131](https://github.com/luxus/luxusAi/issues/131)  
-**Related:** `docs/agents/polaris-hdr-dmabuf-plan.md` (DmaBuf/GPU path), polaris-stream portal patches.
+**Patches (on hold):** [luxus/polaris-hdr-linux-patches](https://github.com/luxus/polaris-hdr-linux-patches)  
+**Related:** `docs/agents/polaris-hdr-dmabuf-plan.md` (DmaBuf/GPU path), KWin dummy path in `polaris-kwin-fake-display.md`.
 
 ## Symptom (user)
 

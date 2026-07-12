@@ -1,5 +1,11 @@
 # Polaris HDR DMA-BUF path — gated plan (self-check)
 
+> **ON HOLD (2026-07-12).** Patches archived at
+> [luxus/polaris-hdr-linux-patches](https://github.com/luxus/polaris-hdr-linux-patches).
+> Active direction: KWin + physical 4K HDR dummy (see `polaris-kwin-fake-display.md`).
+> Stack remains in this flake until we deliberately strip packages; do not extend
+> without re-reading the archive README.
+
 Goal: GameStream of gamescope HDR **without CPU copy** when the producer can
 export `SPA_DATA_DmaBuf`. Keep labwc SDR default. No thrash deploys; each gate
 must pass before the next.
