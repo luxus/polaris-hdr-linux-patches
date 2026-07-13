@@ -116,6 +116,8 @@ stdenv'.mkDerivation (finalAttrs: {
     # 0009 (GL DmaBuf import) left out: fails on NVIDIA, no mid-stream SHM fallback → black video.
     # Persist web UI auth sessions across polaris restarts (cookie alone is not enough).
     ../../polaris/upstream/issue-152-pipewire-capture/0010-persist-web-ui-sessions.patch
+    # Portal reports usable HDR10 mastering metadata so client HDR can enable stream_hdr.
+    ../../polaris/upstream/issue-152-pipewire-capture/0011-portal-hdr-metadata-report.patch
   ];
 
   ui = buildNpmPackage {

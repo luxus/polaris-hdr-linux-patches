@@ -1,0 +1,32 @@
+--- a/src/platform/linux/portal_grab.cpp
++++ b/src/platform/linux/portal_grab.cpp
+@@ -1114,6 +1114,29 @@
+       return 0;
+     }
+ 
++    // Portal has no DRM HDR_OUTPUT_METADATA blob. Without is_hdr/get_hdr_metadata,
++    // client HDR requests always fall to SDR (display_hdr=false). Report usable
++    // Rec.2020/PQ mastering metadata so the HDR bitstream switch can engage when
++    // the client asks (dynamicRange>0). Values match polaris unit-test stub +
++    // gamescope force-HDR ~1000 nit path. Real PW/EDID metadata later.
++    bool is_hdr() override {
++      return true;
++    }
++
++    bool get_hdr_metadata(SS_HDR_METADATA &metadata) override {
++      std::memset(&metadata, 0, sizeof(metadata));
++      // Normalized to 50_000 (see SS_HDR_METADATA). Rec.2020 + D65.
++      metadata.displayPrimaries[0] = {34000, 16000};
++      metadata.displayPrimaries[1] = {13250, 34500};
++      metadata.displayPrimaries[2] = {7500, 3000};
++      metadata.whitePoint = {15635, 16450};
++      metadata.maxDisplayLuminance = 1000;
++      metadata.minDisplayLuminance = 1;
++      metadata.maxContentLightLevel = 1000;
++      metadata.maxFrameAverageLightLevel = 400;
++      return true;
++    }
++
+     platf::capture_e
+     capture(const push_captured_image_cb_t &push_captured_image_cb,
+       const pull_free_image_cb_t &pull_free_image_cb,
