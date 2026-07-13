@@ -1,8 +1,9 @@
 # gamescope with IceDOS/Jovian-oriented HDR PipeWire metadata patches
 # (https://github.com/papi-ux/polaris/issues/152). Opt-in for HDR headless sessions.
+# enableWsi: build VkLayer_FROG_gamescope_wsi (ENABLE_GAMESCOPE_WSI / ENABLE_HDR_WSI).
 { gamescope }:
 
-gamescope.overrideAttrs (old: {
+(gamescope.override { enableWsi = true; }).overrideAttrs (old: {
   pname = "gamescope-hdr";
 
   patches = (old.patches or [ ]) ++ [
@@ -31,6 +32,6 @@ gamescope.overrideAttrs (old: {
   meta = old.meta // {
     description = "${
       old.meta.description or "gamescope"
-    } (HDR PipeWire metadata patches for polaris/gamescope headless)";
+    } (HDR PipeWire metadata + WSI layer for polaris/gamescope headless)";
   };
 })

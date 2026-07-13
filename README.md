@@ -9,7 +9,7 @@ Exports packages + overlay. Experimental gist patches stay under `polaris/experi
 | Output | What |
 |--------|------|
 | `packages.<sys>.polaris-stream` | Polaris on **master** + rebased #152 portal/DMA-BUF patch |
-| `packages.<sys>.gamescope-hdr` | gamescope + IceDOS/HDR PW patches + prefer-dmabuf |
+| `packages.<sys>.gamescope-hdr` | gamescope + IceDOS/HDR PW patches + prefer-dmabuf + WSI layer |
 | `packages.<sys>.xdg-desktop-portal-gamescope` | Jovian portal + stream-size patch |
 | `packages.<sys>.polaris-nvidia-pin` | hybrid-GPU pin shell snippet |
 | `overlays.default` | all of the above on `pkgs` |

@@ -2,6 +2,7 @@
 
 | Date | State |
 |------|--------|
+| 2026-07-13 | **gamescope-hdr WSI**: `enableWsi = true` (VkLayer_FROG_gamescope_wsi for ENABLE_*_WSI) |
 | 2026-07-13 | **0014**: portal DmaBuf when may_use (LINEAR/mmap fallback from experimental) |
 | 2026-07-13 | **0013**: portal dmabuf_negotiate/eligibility diag logs (SHM why) |
 | 2026-07-13 | **gamescope true-SDR**: force=0 → no HDR expose/EDID/2020/display LUTs |
@@ -17,7 +18,7 @@
 
 - `overlays.default` / `packages.*.{polaris-stream,gamescope-hdr,xdg-desktop-portal-gamescope,polaris-nvidia-pin}`
 - Polaris: master `2008458` + `combined.patch` + optional `0007-…-dmabuf.patch` (PR candidate)
-- gamescope: all four patches including prefer-dmabuf
+- gamescope: all four patches including prefer-dmabuf; WSI layer on (`enableWsi`)
 - Experimental polaris gist patches: archive only
 
 ## Open work (GitHub Issues)

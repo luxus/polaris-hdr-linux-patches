@@ -118,6 +118,6 @@ After **0014**, portal capture is GPU DmaBuf + EGL import on both clients. Livin
 - Capture: still `bgra8` (BGRx), not 10-bit `xBGR_210LE`
 - Encode: `p010`
 
-**Env research** (gamescope#1404, ChimeraOS#123, gamescope#2037): `GAMESCOPE_WAYLAND_DISPLAY` already set; `ENABLE_GAMESCOPE_WSI` no-op without WSI layer package; KDE nested HDR fix N/A for headless. See issue #1 comments for tables.
+**Env research** (gamescope#1404, ChimeraOS#123, gamescope#2037): `GAMESCOPE_WAYLAND_DISPLAY` already set; KDE nested HDR fix N/A for headless. **WSI enabled** in `gamescope-hdr` (`enableWsi`) so `ENABLE_GAMESCOPE_WSI` / client-HDR `ENABLE_HDR_WSI` can load `VkLayer_FROG_gamescope_wsi`. See issue #1 comments for tables.
 
 Wash ranking no longer led by SHM — led by **8-bit capture + HDR tags** (+ metadata/convert).
