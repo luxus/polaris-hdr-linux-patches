@@ -1,0 +1,41 @@
+--- a/src/platform/linux/portal_grab.cpp
++++ b/src/platform/linux/portal_grab.cpp
+@@ -1114,16 +1114,32 @@
+       return 0;
+     }
+ 
+-    // Portal has no DRM HDR_OUTPUT_METADATA blob. Without is_hdr/get_hdr_metadata,
+-    // client HDR requests always fall to SDR (display_hdr=false). Report usable
+-    // Rec.2020/PQ mastering metadata so the HDR bitstream switch can engage when
+-    // the client asks (dynamicRange>0). Values match polaris unit-test stub +
+-    // gamescope force-HDR ~1000 nit path. Real PW/EDID metadata later.
++    // Session prep writes $XDG_RUNTIME_DIR/polaris-hdr-force (1 when client HDR).
++    // Only then claim HDR + stub mastering metadata so SDR keeps normal colors.
++    static bool portal_force_hdr_enabled() {
++      const char *rt = std::getenv("XDG_RUNTIME_DIR");
++      if (!rt || !*rt) {
++        return false;
++      }
++      std::ifstream f(std::string(rt) + "/polaris-hdr-force");
++      std::string line;
++      if (!f || !std::getline(f, line)) {
++        return false;
++      }
++      while (!line.empty() && (line.back() == '\r' || line.back() == '\n' || line.back() == ' ')) {
++        line.pop_back();
++      }
++      return line == "1" || line == "true";
++    }
++
+     bool is_hdr() override {
+-      return true;
++      return portal_force_hdr_enabled();
+     }
+ 
+     bool get_hdr_metadata(SS_HDR_METADATA &metadata) override {
++      if (!portal_force_hdr_enabled()) {
++        return false;
++      }
+       std::memset(&metadata, 0, sizeof(metadata));
+       // Normalized to 50_000 (see SS_HDR_METADATA). Rec.2020 + D65.
+       metadata.displayPrimaries[0] = {34000, 16000};

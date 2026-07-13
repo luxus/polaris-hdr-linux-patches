@@ -118,6 +118,8 @@ stdenv'.mkDerivation (finalAttrs: {
     ../../polaris/upstream/issue-152-pipewire-capture/0010-persist-web-ui-sessions.patch
     # Portal reports usable HDR10 mastering metadata so client HDR can enable stream_hdr.
     ../../polaris/upstream/issue-152-pipewire-capture/0011-portal-hdr-metadata-report.patch
+    # Gate portal is_hdr on $XDG_RUNTIME_DIR/polaris-hdr-force (client HDR only).
+    ../../polaris/upstream/issue-152-pipewire-capture/0012-portal-hdr-force-gate.patch
   ];
 
   ui = buildNpmPackage {
