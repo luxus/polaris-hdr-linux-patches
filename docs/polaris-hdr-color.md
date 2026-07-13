@@ -125,3 +125,21 @@ Wash ranking no longer led by SHM — led by **8-bit capture + HDR tags** (+ met
 ## Live update 2026-07-13 (0015 prefer 10-bit)
 
 Root cause of BGRx lock: polaris EnumFormat only listed 8-bit packed RGB while gamescope force-HDR **does** advertise `xBGR_210LE` (spa 81). **0015** prefers `xBGR_210LE` / `DRM_FORMAT_XBGR2101010` and force-offers LINEAR so negotiation can settle on 10-bit. Expect log: `spa_format=81` / `frame_format=p010` (10-bit class) when force-HDR.
+
+## IceDOS / polaris#152 parity (2026-07-13)
+
+Source: [papi-ux/polaris#152](https://github.com/papi-ux/polaris/issues/152#issuecomment-4938188059), [IceDOS `4b62a33`](https://github.com/IceDOS/apps/commit/4b62a33b0c65fc9fb5d07f41821388b124b2f45f), [sunshine-headless-session](https://github.com/IceDOS/apps/tree/main/modules/steam/modules/sunshine-headless-session), [Jovian portal](https://github.com/Jovian-Experiments/Jovian-NixOS/blob/development/pkgs/xdg-desktop-portal-gamescope/default.nix).
+
+IceDBorn “true headless HDR” = **PW + gamescope portal**, not DRM lease (lease/EDID path was dropped in `4b62a33`). Required: gamescope PW **metadata** *and* **PQ-encoded pixels** (paint_pipewire LUTs + `EOTF_PQ`; Gamma pixels + PQ tags = “deep fried”). Host validated there: **Sunshine**.
+
+| Piece | This flake / lea |
+|-------|------------------|
+| gamescope-hdr patches (metadata, headless colorimetry, color-mgmt, PQ postPatch) | yes |
+| WSI layer + session `ENABLE_*_WSI` | yes |
+| Jovian portal + fix-stream-size | yes |
+| polaris portal capture | yes |
+| Prefer xBGR_210LE (0015) | yes |
+| Sunshine encode path | no — polaris-stream |
+| Private host-only portal D-Bus | no |
+
+Retest after deploy: force-HDR livingroom → `spa_format=81` / not `bgra8`. Still washed → convert/TF or Sunshine A/B, not more env.
