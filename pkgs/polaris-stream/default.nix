@@ -109,9 +109,10 @@ stdenv'.mkDerivation (finalAttrs: {
 
   patches = [
     ../../polaris/upstream/issue-152-pipewire-capture/combined.patch
-    # Minimal same-GPU DmaBuf eligibility when PW omits capture render_node
-    # (gamescope headless). Requires adapter_name=/dev/dri/renderD*. PR candidate.
+    # Same-GPU DmaBuf eligibility when PW omits capture render_node (needs adapter_name).
     ../../polaris/upstream/issue-152-pipewire-capture/0007-portal-assume-encoder-render-node-for-dmabuf.patch
+    # Offer DmaBuf without SPA modifier + direct RAM→CUDA for portal SHM (8-bit prefer).
+    ../../polaris/upstream/issue-152-pipewire-capture/0008-portal-dmabuf-and-direct-cuda-encode.patch
   ];
 
   ui = buildNpmPackage {

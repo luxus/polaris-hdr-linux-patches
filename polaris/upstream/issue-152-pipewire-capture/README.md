@@ -15,10 +15,11 @@ Maintainer SDR-first PipeWire / portal DMA-BUF capture (same-GPU check, honest S
 |------|-----|
 | `combined.patch` | Single `git apply` / Nix `patches` on **master** @ `2008458` |
 | `0001`…`0006-*.patch` | Same series as `git format-patch` (apply in order) |
-| `0007-portal-assume-encoder-render-node-for-dmabuf.patch` | **Optional PR candidate:** if PipeWire omits capture render node, assume `adapter_name` (same-GPU). Needs `adapter_name = /dev/dri/renderD*`. Enables DmaBuf offer; MemFd still fallback. |
+| `0007-portal-assume-encoder-render-node-for-dmabuf.patch` | **PR candidate:** if PW omits capture render node, assume `adapter_name`. Needs `adapter_name = /dev/dri/renderD*`. |
+| `0008-portal-dmabuf-and-direct-cuda-encode.patch` | **PR candidate:** (1) offer DmaBuf without SPA modifier; reinit on first DMA-BUF. (2) portal SHM direct RAM→CUDA + prefer 8-bit when client asks 10-bit. |
 
 Verified: `git apply --check combined.patch` on a clean tree at master above.
-`0007` applies cleanly on top of `combined.patch`.
+`0007`+`0008` apply cleanly on top of `combined.patch` (in order).
 
 ## Nix
 

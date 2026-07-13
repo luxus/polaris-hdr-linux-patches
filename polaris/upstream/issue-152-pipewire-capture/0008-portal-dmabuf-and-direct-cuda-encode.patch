@@ -1,0 +1,189 @@
+diff -ruN a/src/platform/common.h b/src/platform/common.h
+--- a/src/platform/common.h	2026-07-13 14:10:00.524447882 +0200
++++ b/src/platform/common.h	2026-07-13 14:13:05.534587728 +0200
+@@ -518,6 +518,9 @@
+     }
+ 
+     video::sunshine_colorspace_t colorspace;
++
++    // Portal SHM CUDA upload is NV12-only; request 8-bit encode when set.
++    bool prefer_8bit_encode = false;
+     std::optional<SS_HDR_METADATA> hdr_metadata;
+   };
+ 
+diff -ruN a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewire_capture.cpp
+--- a/src/platform/linux/pipewire_capture.cpp	2026-07-13 14:10:00.528541418 +0200
++++ b/src/platform/linux/pipewire_capture.cpp	2026-07-13 14:15:21.045907609 +0200
+@@ -735,7 +735,8 @@
+     if (!data->chunk || (data->chunk->flags & SPA_CHUNK_FLAG_CORRUPTED)) {
+       return false;
+     }
+-    const auto accepted_data_types = offered_buffer_data_types(negotiated_dmabuf_);
++    // Accept DmaBuf once same-GPU eligible (gamescope linear often has no SPA modifier).
++    const auto accepted_data_types = offered_buffer_data_types(options_.may_use_dmabuf);
+     if (std::find(accepted_data_types.begin(), accepted_data_types.end(), data->type) == accepted_data_types.end()) {
+       BOOST_LOG(warning) << "portal: unsupported PipeWire buffer data type="sv << data->type
+                          << " data="sv << (data->data ? "mapped" : "null");
+@@ -743,28 +744,52 @@
+       return false;
+     }
+ 
+-    frame_info_t info;
++    frame_info_t frame_info;
+     {
+       std::lock_guard lk(frame_mtx_);
+-      info = front_info_;
++      frame_info = front_info_;
+     }
+-    if (info.width <= 0 || info.height <= 0) {
++    if (frame_info.width <= 0 || frame_info.height <= 0) {
+       return false;
+     }
+ 
+     if (data->type == SPA_DATA_DmaBuf) {
+-      auto drm_format = drm_format_for_spa(info.spa_format);
+-      if (!drm_format || !negotiated_dmabuf_) {
++      auto drm_format = drm_format_for_spa(frame_info.spa_format);
++      if (!drm_format || !options_.may_use_dmabuf) {
+         set_terminal(wait_result_e::reinit);
+         return false;
+       }
+ 
++      // First DMA-BUF → reinit encoder for GL/CUDA import. Local var must not be
++      // named `info` near BOOST_LOG(info) (Boost.Log severity logger clash).
++      bool first_dmabuf = false;
++      std::uint64_t first_mod = frame_info.modifier;
++      {
++        std::lock_guard lk(frame_mtx_);
++        if (!negotiated_dmabuf_) {
++          negotiated_dmabuf_ = true;
++          if (frame_info.modifier == DRM_FORMAT_MOD_INVALID) {
++            frame_info.modifier = DRM_FORMAT_MOD_LINEAR;
++            front_info_.modifier = DRM_FORMAT_MOD_LINEAR;
++            first_mod = DRM_FORMAT_MOD_LINEAR;
++          }
++          first_dmabuf = true;
++        }
++      }
++      if (first_dmabuf) {
++        BOOST_LOG(info) << "portal: first PipeWire DMA-BUF buffer (modifier="sv << first_mod
++                        << "); reinitializing encoder for GPU import"sv;
++        set_terminal(wait_result_e::reinit);
++        return false;
++      }
++
++      const auto modifier = (frame_info.modifier == DRM_FORMAT_MOD_INVALID) ? DRM_FORMAT_MOD_LINEAR : frame_info.modifier;
+       dmabuf_frame_t frame {
+-        .width = info.width,
+-        .height = info.height,
+-        .spa_format = info.spa_format,
++        .width = frame_info.width,
++        .height = frame_info.height,
++        .spa_format = frame_info.spa_format,
+         .drm_fourcc = *drm_format,
+-        .modifier = info.modifier,
++        .modifier = modifier,
+         .plane_count = buffer->buffer->n_datas,
+       };
+       if (frame.plane_count > frame.planes.size()) {
+@@ -816,29 +841,29 @@
+       return false;
+     }
+ 
+-    const auto width_bytes = static_cast<std::size_t>(info.width) * 4u;
++    const auto width_bytes = static_cast<std::size_t>(frame_info.width) * 4u;
+     const auto staging_stride = width_bytes;
+-    back_frame_.resize(static_cast<std::size_t>(info.height) * staging_stride);
++    back_frame_.resize(static_cast<std::size_t>(frame_info.height) * staging_stride);
+ 
+     if (!copy_memptr_frame_to_bgra(
+           static_cast<const std::uint8_t *>(data->data),
+           data->maxsize,
+           data->chunk->offset,
+           data->chunk->size,
+-          info.width,
+-          info.height,
++          frame_info.width,
++          frame_info.height,
+           data->chunk->stride,
+-          info.spa_format,
++          frame_info.spa_format,
+           back_frame_.data(),
+           staging_stride)) {
+       return false;
+     }
+ 
+-    info.stride = static_cast<int>(staging_stride);
++    frame_info.stride = static_cast<int>(staging_stride);
+     {
+       std::lock_guard lk(frame_mtx_);
+       front_frame_.swap(back_frame_);
+-      front_info_ = info;
++      front_info_ = frame_info;
+       front_dmabuf_frame_.reset();
+       frame_available_ = true;
+     }
+@@ -922,7 +947,10 @@
+ 
+     BOOST_LOG(info) << "portal: PipeWire format negotiated: "sv
+                     << raw_info.size.width << "x"sv << raw_info.size.height
+-                    << " format="sv << spa_debug_type_find_name(spa_type_video_format, raw_info.format);
++                    << " format="sv << spa_debug_type_find_name(spa_type_video_format, raw_info.format)
++                    << " may_use_dmabuf="sv << (cap->options_.may_use_dmabuf ? "true"sv : "false"sv)
++                    << " has_modifier="sv << (has_modifier ? "true"sv : "false"sv)
++                    << " dmabuf_format="sv << (dmabuf_negotiated ? "true"sv : "false"sv);
+ 
+     if (requires_reinit) {
+       BOOST_LOG(info) << "portal: PipeWire capture transport or dimensions changed; reinitializing encoder"sv;
+@@ -933,7 +961,8 @@
+     uint8_t params_buffer[1024];
+     spa_pod_builder pb = SPA_POD_BUILDER_INIT(params_buffer, sizeof(params_buffer));
+     std::uint32_t data_type_mask = 0;
+-    for (const auto data_type : offered_buffer_data_types(dmabuf_negotiated)) {
++    // Offer DmaBuf when same-GPU eligible (even if format has no SPA modifier yet).
++    for (const auto data_type : offered_buffer_data_types(cap->options_.may_use_dmabuf)) {
+       data_type_mask |= 1u << data_type;
+     }
+     const auto *buf_param = reinterpret_cast<const spa_pod *>(spa_pod_builder_add_object(
+diff -ruN a/src/platform/linux/portal_grab.cpp b/src/platform/linux/portal_grab.cpp
+--- a/src/platform/linux/portal_grab.cpp	2026-07-13 14:10:00.528797813 +0200
++++ b/src/platform/linux/portal_grab.cpp	2026-07-13 14:13:05.534951416 +0200
+@@ -1303,11 +1303,13 @@
+         if (pipewire_dmabuf_negotiated) {
+           return cuda::make_avcodec_gl_encode_device(w, h, 0, 0);
+         }
+-        if (pix_fmt == platf::pix_fmt_e::nv12) {
+-          return cuda::make_avcodec_encode_device(w, h, false);
++        // Direct RAM→CUDA (NV12) for portal SHM. prefer_8bit_encode: 10-bit clients
++        // get GPU 8-bit instead of software P010 until DMA-BUF is active.
++        auto device = cuda::make_avcodec_encode_device(w, h, false);
++        if (device) {
++          device->prefer_8bit_encode = true;
+         }
+-
+-        return std::make_unique<platf::avcodec_encode_device_t>();
++        return device;
+       }
+ #endif
+       return std::make_unique<platf::avcodec_encode_device_t>();
+diff -ruN a/src/video.cpp b/src/video.cpp
+--- a/src/video.cpp	2026-07-13 14:10:00.526300097 +0200
++++ b/src/video.cpp	2026-07-13 14:13:05.535599102 +0200
+@@ -3352,6 +3352,17 @@
+ 
+     if (dynamic_cast<const encoder_platform_formats_avcodec *>(encoder.platform_formats.get())) {
+       result = disp.make_avcodec_encode_device(*pix_fmt);
++      // Portal SHM CUDA is NV12-only: prefer GPU 8-bit over software 10-bit.
++      if (result && result->prefer_8bit_encode && colorspace.bit_depth == 10) {
++        BOOST_LOG(info) << "Using 8-bit NV12 CUDA upload for capture path that cannot do 10-bit GPU frames"sv;
++        colorspace.bit_depth = 8;
++        if (auto pix8 = select_encoder_output_pix_fmt(encoder, config, colorspace)) {
++          result = disp.make_avcodec_encode_device(*pix8);
++          if (result) {
++            result->prefer_8bit_encode = true;
++          }
++        }
++      }
+     } else if (dynamic_cast<const encoder_platform_formats_nvenc *>(encoder.platform_formats.get())) {
+       result = disp.make_nvenc_encode_device(*pix_fmt);
+     }
