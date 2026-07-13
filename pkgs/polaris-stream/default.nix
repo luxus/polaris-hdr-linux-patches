@@ -111,8 +111,10 @@ stdenv'.mkDerivation (finalAttrs: {
     ../../polaris/upstream/issue-152-pipewire-capture/combined.patch
     # Same-GPU DmaBuf eligibility when PW omits capture render_node (needs adapter_name).
     ../../polaris/upstream/issue-152-pipewire-capture/0007-portal-assume-encoder-render-node-for-dmabuf.patch
-    # Offer DmaBuf without SPA modifier + direct RAM→CUDA for portal SHM (8-bit prefer).
+    # Portal SHM→CUDA NV12 + prefer_8bit when client asks 10-bit.
     ../../polaris/upstream/issue-152-pipewire-capture/0008-portal-dmabuf-and-direct-cuda-encode.patch
+    # Re-enable DmaBuf offer + robust GL import retries (gamescope linear BGRx / NVIDIA).
+    ../../polaris/upstream/issue-152-pipewire-capture/0009-portal-dmabuf-gl-import.patch
   ];
 
   ui = buildNpmPackage {

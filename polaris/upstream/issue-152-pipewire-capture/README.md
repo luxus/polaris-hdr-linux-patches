@@ -16,7 +16,8 @@ Maintainer SDR-first PipeWire / portal DMA-BUF capture (same-GPU check, honest S
 | `combined.patch` | Single `git apply` / Nix `patches` on **master** @ `2008458` (= 0001…0006) |
 | `0001`…`0006-*.patch` | Same series as `git format-patch` (apply in order) |
 | `0007-portal-assume-encoder-render-node-for-dmabuf.patch` | If PW omits capture render node, assume `adapter_name` for same-GPU eligibility. Needs `adapter_name = /dev/dri/renderD*`. |
-| `0008-portal-dmabuf-and-direct-cuda-encode.patch` | **Portal SHM → CUDA NV12 + prefer_8bit** when client asks 10-bit. Gamescope linear DMA-BUF without SPA modifier **cannot** use GL import yet (`EGLImageTargetTexture2DOES` → `GL_INVALID_OPERATION`); do **not** force DmaBuf-without-modifier / first-buffer reinit (that looped ScreenCast and blacked video). |
+| `0008-portal-dmabuf-and-direct-cuda-encode.patch` | **Portal SHM → CUDA NV12 + prefer_8bit** when client asks 10-bit (fallback when DMA-BUF import fails). |
+| `0009-portal-dmabuf-gl-import.patch` | Re-offer DmaBuf without SPA modifier (no reinit thrash) + **GL import retries** (LINEAR/fourcc flip/`EGL_IMAGE_PRESERVED`) for gamescope linear BGRx on NVIDIA. |
 
 Apply order in `pkgs/polaris-stream/default.nix`:
 
@@ -25,6 +26,7 @@ patches = [
   ../../polaris/upstream/issue-152-pipewire-capture/combined.patch
   ../../polaris/upstream/issue-152-pipewire-capture/0007-portal-assume-encoder-render-node-for-dmabuf.patch
   ../../polaris/upstream/issue-152-pipewire-capture/0008-portal-dmabuf-and-direct-cuda-encode.patch
+  ../../polaris/upstream/issue-152-pipewire-capture/0009-portal-dmabuf-gl-import.patch
 ];
 ```
 

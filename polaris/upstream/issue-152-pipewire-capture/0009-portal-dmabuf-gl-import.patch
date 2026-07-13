@@ -1,0 +1,332 @@
+diff -ruN a/src/platform/linux/graphics.cpp b/src/platform/linux/graphics.cpp
+--- a/src/platform/linux/graphics.cpp	1970-01-01 01:00:01.000000000 +0100
++++ b/src/platform/linux/graphics.cpp	2026-07-13 17:37:13.219600825 +0200
+@@ -533,7 +533,11 @@
+    * @param surface The surface descriptor.
+    * @return Vector of EGL attributes.
+    */
+-  std::vector<EGLAttrib> surface_descriptor_to_egl_attribs(const surface_descriptor_t &surface) {
++  // EGL_EXT_image_dma_buf_import optional preserved flag (keep buffer contents).
++  constexpr EGLAttrib EGL_IMAGE_PRESERVED_KHR_ATTR = 0x30D2;
++  constexpr std::uint64_t DRM_FORMAT_MOD_LINEAR_LOCAL = 0;
++
++  std::vector<EGLAttrib> surface_descriptor_to_egl_attribs(const surface_descriptor_t &surface, bool include_modifiers = true) {
+     std::vector<EGLAttrib> attribs;
+ 
+     attribs.emplace_back(EGL_WIDTH);
+@@ -558,7 +562,7 @@
+       attribs.emplace_back(plane_attr.pitch);
+       attribs.emplace_back(surface.pitches[x]);
+ 
+-      if (surface.modifier != DRM_FORMAT_MOD_INVALID) {
++      if (include_modifiers && surface.modifier != DRM_FORMAT_MOD_INVALID) {
+         attribs.emplace_back(plane_attr.lo);
+         attribs.emplace_back(surface.modifier & 0xFFFFFFFF);
+         attribs.emplace_back(plane_attr.hi);
+@@ -566,37 +570,124 @@
+       }
+     }
+ 
++    // Helps some NVIDIA drivers keep/import linear compositor buffers.
++    attribs.emplace_back(EGL_IMAGE_PRESERVED_KHR_ATTR);
++    attribs.emplace_back(EGL_TRUE);
+     attribs.emplace_back(EGL_NONE);
+     return attribs;
+   }
+ 
+-  std::optional<rgb_t> import_source(display_t::pointer egl_display, const surface_descriptor_t &xrgb) {
+-    auto attribs = surface_descriptor_to_egl_attribs(xrgb);
++  void bind_dmabuf_texture_params(GLenum target) {
++    gl::ctx.TexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
++    gl::ctx.TexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
++    gl::ctx.TexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++    gl::ctx.TexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++  }
++
++  // Drain pending GL errors without logging (used between import attempts).
++  void gl_clear_errors_quiet() {
++    while (gl::ctx.GetError() != GL_NO_ERROR) {
++    }
++  }
++
++  std::optional<rgb_t> try_import_rgb_texture(
++    display_t::pointer egl_display,
++    const surface_descriptor_t &surface,
++    bool include_modifiers,
++    const char *attempt_tag
++  ) {
++    auto attribs = surface_descriptor_to_egl_attribs(surface, include_modifiers);
++    auto image = eglCreateImage(egl_display, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs.data());
++    if (!image) {
++      BOOST_LOG(debug) << "eglCreateImage failed ("sv << attempt_tag << "): "sv
++                       << util::hex(eglGetError()).to_string_view();
++      return std::nullopt;
++    }
+ 
+     rgb_t rgb {
+       egl_display,
+-      eglCreateImage(egl_display, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs.data()),
++      image,
+       gl::tex_t::make(1)
+     };
+ 
+-    if (!rgb->xrgb8) {
+-      BOOST_LOG(error) << "Couldn't import RGB Image: "sv << util::hex(eglGetError()).to_string_view();
+-
+-      return std::nullopt;
+-    }
+-
++    gl_clear_errors_quiet();
+     gl::ctx.BindTexture(GL_TEXTURE_2D, rgb->tex[0]);
++    bind_dmabuf_texture_params(GL_TEXTURE_2D);
+     gl::ctx.EGLImageTargetTexture2DOES(GL_TEXTURE_2D, rgb->xrgb8);
+-
++    const auto err = gl::ctx.GetError();
+     gl::ctx.BindTexture(GL_TEXTURE_2D, 0);
+ 
+-    if (gl_drain_errors) {
++    if (err != GL_NO_ERROR) {
++      BOOST_LOG(debug) << "EGLImageTargetTexture2DOES failed ("sv << attempt_tag << "): ["sv
++                       << util::hex(err).to_string_view() << "] fourcc=0x"sv
++                       << util::hex(surface.fourcc).to_string_view()
++                       << " modifier="sv << surface.modifier
++                       << " pitch="sv << surface.pitches[0]
++                       << " offset="sv << surface.offsets[0];
+       return std::nullopt;
+     }
+ 
++    BOOST_LOG(info) << "portal/gl: imported DMA-BUF RGB ("sv << attempt_tag << ") fourcc=0x"sv
++                    << util::hex(surface.fourcc).to_string_view()
++                    << " modifier="sv << surface.modifier;
+     return rgb;
+   }
+ 
++  std::optional<rgb_t> import_source(display_t::pointer egl_display, const surface_descriptor_t &xrgb) {
++    // gamescope linear BGRx often arrives as modifier 0 / INVALID; NVIDIA can reject
++    // the first fourcc+modifier combo with GL_INVALID_OPERATION on TargetTexture2D.
++    // Try a small matrix of import shapes before giving up (SHM fallback elsewhere).
++    surface_descriptor_t variants[6] = {xrgb, xrgb, xrgb, xrgb, xrgb, xrgb};
++
++    // 0: as-is with modifiers
++    // 1: force LINEAR modifier
++    variants[1].modifier = DRM_FORMAT_MOD_LINEAR_LOCAL;
++    // 2: no modifier attributes (handled via include_modifiers=false)
++    // 3-5: swap XRGB <-> XBGR (SPA BGRx endian ambiguity across drivers)
++    constexpr std::uint32_t XRGB = fourcc_code('X', 'R', '2', '4');  // DRM_FORMAT_XRGB8888
++    constexpr std::uint32_t XBGR = fourcc_code('X', 'B', '2', '4');  // DRM_FORMAT_XBGR8888
++    constexpr std::uint32_t ARGB = fourcc_code('A', 'R', '2', '4');
++    constexpr std::uint32_t ABGR = fourcc_code('A', 'B', '2', '4');
++
++    auto flip_rgb = [](std::uint32_t fourcc) -> std::uint32_t {
++      if (fourcc == XRGB) return XBGR;
++      if (fourcc == XBGR) return XRGB;
++      if (fourcc == ARGB) return ABGR;
++      if (fourcc == ABGR) return ARGB;
++      return fourcc;
++    };
++
++    variants[3].fourcc = flip_rgb(xrgb.fourcc);
++    variants[3].modifier = (xrgb.modifier == DRM_FORMAT_MOD_INVALID) ? DRM_FORMAT_MOD_LINEAR_LOCAL : xrgb.modifier;
++    variants[4].fourcc = flip_rgb(xrgb.fourcc);
++    variants[4].modifier = DRM_FORMAT_MOD_LINEAR_LOCAL;
++    variants[5] = variants[3];
++
++    const char *tags[] = {
++      "as-is+mod",
++      "linear+mod",
++      "as-is+nomod",
++      "flip+mod",
++      "flip+linear",
++      "flip+nomod",
++    };
++    const bool include_mod[] = {true, true, false, true, true, false};
++
++    for (int i = 0; i < 6; ++i) {
++      if (auto rgb = try_import_rgb_texture(egl_display, variants[i], include_mod[i], tags[i])) {
++        return rgb;
++      }
++    }
++
++    BOOST_LOG(error) << "Couldn't import RGB DMA-BUF after retries: fourcc=0x"sv
++                     << util::hex(xrgb.fourcc).to_string_view()
++                     << " modifier="sv << xrgb.modifier
++                     << " size="sv << xrgb.width << "x"sv << xrgb.height
++                     << " pitch="sv << xrgb.pitches[0]
++                     << " offset="sv << xrgb.offsets[0];
++    return std::nullopt;
++  }
++
+   /**
+    * @brief Create a black RGB texture of the specified image size.
+    * @param img The image to use for texture sizing.
+diff -ruN a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewire_capture.cpp
+--- a/src/platform/linux/pipewire_capture.cpp	2026-07-13 14:06:56.177478886 +0200
++++ b/src/platform/linux/pipewire_capture.cpp	2026-07-13 17:39:44.050142015 +0200
+@@ -735,7 +735,8 @@
+     if (!data->chunk || (data->chunk->flags & SPA_CHUNK_FLAG_CORRUPTED)) {
+       return false;
+     }
+-    const auto accepted_data_types = offered_buffer_data_types(negotiated_dmabuf_);
++    // Accept DmaBuf whenever same-GPU eligible (gamescope linear often has no SPA modifier).
++    const auto accepted_data_types = offered_buffer_data_types(options_.may_use_dmabuf);
+     if (std::find(accepted_data_types.begin(), accepted_data_types.end(), data->type) == accepted_data_types.end()) {
+       BOOST_LOG(warning) << "portal: unsupported PipeWire buffer data type="sv << data->type
+                          << " data="sv << (data->data ? "mapped" : "null");
+@@ -743,28 +744,48 @@
+       return false;
+     }
+ 
+-    frame_info_t info;
++    frame_info_t frame_info;
+     {
+       std::lock_guard lk(frame_mtx_);
+-      info = front_info_;
++      frame_info = front_info_;
+     }
+-    if (info.width <= 0 || info.height <= 0) {
++    if (frame_info.width <= 0 || frame_info.height <= 0) {
+       return false;
+     }
+ 
+     if (data->type == SPA_DATA_DmaBuf) {
+-      auto drm_format = drm_format_for_spa(info.spa_format);
+-      if (!drm_format || !negotiated_dmabuf_) {
++      auto drm_format = drm_format_for_spa(frame_info.spa_format);
++      if (!drm_format || !options_.may_use_dmabuf) {
+         set_terminal(wait_result_e::reinit);
+         return false;
+       }
+ 
++      // gamescope linear: INVALID -> LINEAR; mark negotiated without ScreenCast reinit thrash.
++      // (Do not name a local `info` near BOOST_LOG(info) — Boost.Log severity clash.)
++      std::uint64_t frame_modifier = frame_info.modifier;
++      {
++        std::lock_guard lk(frame_mtx_);
++        if (!negotiated_dmabuf_) {
++          negotiated_dmabuf_ = true;
++          const auto first_mod = (frame_info.modifier == DRM_FORMAT_MOD_INVALID) ? 0 : frame_info.modifier;
++          BOOST_LOG(info) << "portal: first PipeWire DMA-BUF (modifier="sv << first_mod
++                          << "); GPU import path without reinit"sv;
++        }
++        if (frame_info.modifier == DRM_FORMAT_MOD_INVALID) {
++          frame_info.modifier = 0;
++          front_info_.modifier = 0;
++          frame_modifier = 0;
++        } else {
++          frame_modifier = frame_info.modifier;
++        }
++      }
++
+       dmabuf_frame_t frame {
+-        .width = info.width,
+-        .height = info.height,
+-        .spa_format = info.spa_format,
++        .width = frame_info.width,
++        .height = frame_info.height,
++        .spa_format = frame_info.spa_format,
+         .drm_fourcc = *drm_format,
+-        .modifier = info.modifier,
++        .modifier = frame_modifier,
+         .plane_count = buffer->buffer->n_datas,
+       };
+       if (frame.plane_count > frame.planes.size()) {
+@@ -816,29 +837,29 @@
+       return false;
+     }
+ 
+-    const auto width_bytes = static_cast<std::size_t>(info.width) * 4u;
++    const auto width_bytes = static_cast<std::size_t>(frame_info.width) * 4u;
+     const auto staging_stride = width_bytes;
+-    back_frame_.resize(static_cast<std::size_t>(info.height) * staging_stride);
++    back_frame_.resize(static_cast<std::size_t>(frame_info.height) * staging_stride);
+ 
+     if (!copy_memptr_frame_to_bgra(
+           static_cast<const std::uint8_t *>(data->data),
+           data->maxsize,
+           data->chunk->offset,
+           data->chunk->size,
+-          info.width,
+-          info.height,
++          frame_info.width,
++          frame_info.height,
+           data->chunk->stride,
+-          info.spa_format,
++          frame_info.spa_format,
+           back_frame_.data(),
+           staging_stride)) {
+       return false;
+     }
+ 
+-    info.stride = static_cast<int>(staging_stride);
++    frame_info.stride = static_cast<int>(staging_stride);
+     {
+       std::lock_guard lk(frame_mtx_);
+       front_frame_.swap(back_frame_);
+-      front_info_ = info;
++      front_info_ = frame_info;
+       front_dmabuf_frame_.reset();
+       frame_available_ = true;
+     }
+@@ -883,10 +904,12 @@
+       cap->set_terminal(wait_result_e::reinit);
+       return;
+     }
+-    const auto dmabuf_negotiated = cap->options_.may_use_dmabuf && offered_dmabuf;
++    // Same-GPU eligibility => offer DmaBuf even without SPA modifier (gamescope linear).
++    const auto dmabuf_negotiated = cap->options_.may_use_dmabuf;
+     if (dmabuf_negotiated) {
+-      BOOST_LOG(info) << "portal: PipeWire DMA-BUF format negotiated with modifier="sv
+-                      << raw_info.modifier;
++      BOOST_LOG(info) << "portal: PipeWire DMA-BUF path (may_use_dmabuf); spa_modifier="sv
++                      << (has_modifier ? raw_info.modifier : 0ull)
++                      << " has_modifier="sv << (has_modifier ? "true"sv : "false"sv);
+     }
+ 
+     pw_buffer *replaced_buffer = nullptr;
+@@ -905,7 +928,8 @@
+         .height = height,
+         .stride = width * 4,
+         .spa_format = raw_info.format,
+-        .modifier = raw_info.flags & SPA_VIDEO_FLAG_MODIFIER ? raw_info.modifier : DRM_FORMAT_MOD_INVALID,
++        .modifier = has_modifier ? raw_info.modifier
++                                 : (cap->options_.may_use_dmabuf ? 0 : DRM_FORMAT_MOD_INVALID),
+       };
+       cap->front_frame_.clear();
+       cap->back_frame_.clear();
+@@ -922,7 +946,10 @@
+ 
+     BOOST_LOG(info) << "portal: PipeWire format negotiated: "sv
+                     << raw_info.size.width << "x"sv << raw_info.size.height
+-                    << " format="sv << spa_debug_type_find_name(spa_type_video_format, raw_info.format);
++                    << " format="sv << spa_debug_type_find_name(spa_type_video_format, raw_info.format)
++                    << " may_use_dmabuf="sv << (cap->options_.may_use_dmabuf ? "true"sv : "false"sv)
++                    << " has_modifier="sv << (has_modifier ? "true"sv : "false"sv)
++                    << " dmabuf_format="sv << (dmabuf_negotiated ? "true"sv : "false"sv);
+ 
+     if (requires_reinit) {
+       BOOST_LOG(info) << "portal: PipeWire capture transport or dimensions changed; reinitializing encoder"sv;
+@@ -933,7 +960,8 @@
+     uint8_t params_buffer[1024];
+     spa_pod_builder pb = SPA_POD_BUILDER_INIT(params_buffer, sizeof(params_buffer));
+     std::uint32_t data_type_mask = 0;
+-    for (const auto data_type : offered_buffer_data_types(dmabuf_negotiated)) {
++    // Offer DmaBuf whenever same-GPU eligible (even if format has no SPA modifier yet).
++    for (const auto data_type : offered_buffer_data_types(cap->options_.may_use_dmabuf)) {
+       data_type_mask |= 1u << data_type;
+     }
+     const auto *buf_param = reinterpret_cast<const spa_pod *>(spa_pod_builder_add_object(
+diff -ruN a/src/platform/linux/portal_grab.cpp b/src/platform/linux/portal_grab.cpp
+--- a/src/platform/linux/portal_grab.cpp	2026-07-13 14:47:42.386980466 +0200
++++ b/src/platform/linux/portal_grab.cpp	2026-07-13 17:37:13.249898733 +0200
+@@ -1303,9 +1303,8 @@
+         if (pipewire_dmabuf_negotiated) {
+           return cuda::make_avcodec_gl_encode_device(w, h, 0, 0);
+         }
+-        // Portal MemFd/SHM: RAM→CUDA NV12. prefer_8bit avoids software P010 for 10-bit clients.
+-        // gamescope linear DmaBuf without SPA modifier cannot use the GL import path yet
+-        // (EGLImageTargetTexture2DOES → GL_INVALID_OPERATION); stay on SHM until that works.
++        // Portal MemFd/SHM fallback: RAM→CUDA NV12 + prefer_8bit for 10-bit clients.
++        // Prefer GL/CUDA DMA-BUF when pipewire_dmabuf_negotiated (import retries in egl::import_source).
+         auto device = cuda::make_avcodec_encode_device(w, h, false);
+         if (device) {
+           device->prefer_8bit_encode = true;
