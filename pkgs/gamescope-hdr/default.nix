@@ -12,10 +12,10 @@
   pname = "gamescope-hdr";
 
   patches = (old.patches or [ ]) ++ [
-    ../../gamescope/pipewire-hdr-metadata.patch
-    ../../gamescope/headless-hdr-colorimetry.patch
+    ../../gamescope/01-pipewire-hdr-metadata.patch
+    ../../gamescope/02-headless-hdr-colorimetry.patch
     # Prefer SPA_DATA_DmaBuf when the consumer allows it (GameStream zero-copy).
-    ../../gamescope/pipewire-prefer-dmabuf.patch
+    ../../gamescope/03-pipewire-prefer-dmabuf.patch
   ];
 
   meta = old.meta // {

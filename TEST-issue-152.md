@@ -1,29 +1,25 @@
-# Test: polaris#152 SDR-first PipeWire capture (4090 / gamescope)
+# #152 capture smoke test
 
-**Maintainer ask** ([#152](https://github.com/papi-ux/polaris/issues/152)):  
-Keep **gamescope** `pipewire-prefer-dmabuf`. **Remove** experimental Polaris patches. Run #152 capture work. Focus window required. Report `render_node`, format/modifier, `capture_transport`, `frame_residency`.
+Keep **gamescope** `03-pipewire-prefer-dmabuf`. Polaris uses topic patches only
+(`polaris/01`–`03`). Archived experimental / numbered series stay off.
 
-## Build matrix
+Focus window required. Report `render_node`, format/modifier, `capture_transport`, `frame_residency`.
 
-| Component | Config |
-|-----------|--------|
-| Polaris | **master** `2008458` + `polaris/upstream/issue-152-pipewire-capture/combined.patch` |
-| Polaris experimental | **off** |
-| gamescope | at least `pipewire-prefer-dmabuf` (other HDR metadata patches optional for SDR-first) |
-| Portal | xdg-desktop-portal-gamescope + `fix-stream-size` + portals.conf when capturing gamescope |
-| GPU | hybrid: pin NVIDIA render node for gamescope + polaris |
+## Matrix
 
-Why not branch tip alone: `perf/issue-152-pipewire-capture` is 5 commits behind master (v1.3.1 etc.). Content is rebased onto master with only a changelog conflict.
+| Component | Version |
+|-----------|---------|
+| Polaris | **master** `2008458` + `polaris/01`–`03` |
+| gamescope | `gamescope-hdr` with `01`–`03` |
+| portal | `xdg-desktop-portal-gamescope` + `01-fix-stream-size` |
 
-## Runtime steps
+## Expect (known-good lea)
 
-1. gamescope session with a **focus client** (Steam gamepadui / game). Bare idle → zero frames.
-2. polaris portal capture against gamescope.
-3. Stream once (SDR first is fine).
-4. Host logs: `render_node`, fourcc/modifier, `capture_transport`, `frame_residency`.
-5. Optional reconnect; note SHM fallback reason if any.
+- `capture_transport=dmabuf` (or honest SHM fallback)
+- HDR client: `xBGR_210LE` / p010, `stream_hdr_enabled=true` when force+metadata
+- SDR client / forced SDR app: no force-HDR wash
 
-## What not to do
+## Do not
 
-- Do not apply `polaris/experimental/*` for this run.
-- Do not treat washed HDR color as a failure of this branch (SDR-first).
+- Apply `archived/polaris/**` or old `0009` GL import
+- Set `ENABLE_GAMESCOPE_WSI` / `ENABLE_HDR_WSI` for Proton

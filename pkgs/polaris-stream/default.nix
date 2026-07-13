@@ -95,8 +95,8 @@ in
 assert stdenv.hostPlatform.isLinux;
 stdenv'.mkDerivation (finalAttrs: {
   pname = "polaris-stream";
-  # master + rebased polaris#152 (perf/issue-152-pipewire-capture).
-  # Experimental gist patches live under ../../polaris/experimental/ (not applied).
+  # master + topic patches under ../../polaris/ (see polaris/README.md).
+  # Archived numbered series: ../../archived/polaris/
   version = "0-unstable-2026-07-13";
 
   src = fetchFromGitHub {
@@ -108,24 +108,12 @@ stdenv'.mkDerivation (finalAttrs: {
   };
 
   patches = [
-    ../../polaris/upstream/issue-152-pipewire-capture/combined.patch
-    # Same-GPU DmaBuf eligibility when PW omits capture render_node (needs adapter_name).
-    ../../polaris/upstream/issue-152-pipewire-capture/0007-portal-assume-encoder-render-node-for-dmabuf.patch
-    # Portal SHM→CUDA NV12 + prefer_8bit when client asks 10-bit.
-    ../../polaris/upstream/issue-152-pipewire-capture/0008-portal-dmabuf-and-direct-cuda-encode.patch
-    # 0009 (GL DmaBuf import) left out: fails on NVIDIA, no mid-stream SHM fallback → black video.
-    # Persist web UI auth sessions across polaris restarts (cookie alone is not enough).
-    ../../polaris/upstream/issue-152-pipewire-capture/0010-persist-web-ui-sessions.patch
-    # Portal reports usable HDR10 mastering metadata so client HDR can enable stream_hdr.
-    ../../polaris/upstream/issue-152-pipewire-capture/0011-portal-hdr-metadata-report.patch
-    # Gate portal is_hdr on $XDG_RUNTIME_DIR/polaris-hdr-force (client HDR only).
-    ../../polaris/upstream/issue-152-pipewire-capture/0012-portal-hdr-force-gate.patch
-    # Diag only: log may_use/has_modifier/offered/negotiated (why capture stays SHM).
-    ../../polaris/upstream/issue-152-pipewire-capture/0013-portal-dmabuf-negotiate-diag.patch
-    # Offer DmaBuf when same-GPU eligible (LINEAR if SPA silent); EGL import + mmap fallback.
-    ../../polaris/upstream/issue-152-pipewire-capture/0014-portal-dmabuf-linear-mmap-fallback.patch
-    # Prefer gamescope HDR xBGR_210LE (10-bit) over BGRx for portal capture.
-    ../../polaris/upstream/issue-152-pipewire-capture/0015-portal-prefer-xbgr-210le.patch
+    # 01: #152 PipeWire portal + same-GPU DmaBuf + CUDA encode + xBGR_210LE prefer
+    ../../polaris/01-portal-pipewire-dmabuf.patch
+    # 02: portal HDR10 metadata + polaris-hdr-force gate
+    ../../polaris/02-portal-hdr-metadata.patch
+    # 03: persist Web UI auth sessions across restart
+    ../../polaris/03-web-ui-session-persist.patch
   ];
 
   ui = buildNpmPackage {

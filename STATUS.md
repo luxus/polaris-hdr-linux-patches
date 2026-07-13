@@ -2,55 +2,45 @@
 
 | Date | State |
 |------|--------|
-| 2026-07-13 | **HDR OK on lea**: no ENABLE_*_WSI (WSI layer broke Proton present → wash); XWayland + 0015 xBGR + portal HDR |
-| 2026-07-13 | **gamescope paint**: drop color-mgmt + PQ postPatch; stock screenshot/Gamma22 PW paint |
-| 2026-07-13 | **0015**: portal prefer xBGR_210LE (10-bit) over BGRx for gamescope HDR |
-| 2026-07-13 | **gamescope-hdr WSI**: `enableWsi = true` (VkLayer_FROG_gamescope_wsi for ENABLE_*_WSI) |
-| 2026-07-13 | **0014**: portal DmaBuf when may_use (LINEAR/mmap fallback from experimental) |
-| 2026-07-13 | **0013**: portal dmabuf_negotiate/eligibility diag logs (SHM why) |
-| 2026-07-13 | **gamescope true-SDR**: force=0 → no HDR expose/EDID/2020/display LUTs |
-| 2026-07-13 | **0012**: portal is_hdr gated on client HDR force file |
-| 2026-07-13 | **0011**: portal reports HDR metadata (client HDR switch can engage) |
-| 2026-07-13 | **0010**: persist Web UI auth sessions across polaris restart |
-| 2026-07-13 | **0007 PR candidate**: assume `adapter_name` when PW omits capture render_node (same-GPU DmaBuf) |
-| 2026-07-13 | **Working flake** — packages + overlay published; experimental under `polaris/experimental/` (not applied) |
-| 2026-07-13 | #152 test: master + rebased combined patch; gamescope prefer-dmabuf |
-| 2026-07-12 | Research archive freeze |
+| 2026-07-13 | **Patch cleanup**: topic series under `polaris/` + `gamescope/`; old `0001`…`0015` + experimental → `archived/` |
+| 2026-07-13 | **HDR OK on lea**: no ENABLE_*_WSI; XWayland + prefer xBGR_210LE + portal HDR |
+| 2026-07-13 | **DmaBuf green**: `capture_transport=dmabuf`, EGL import OK, p010 encode |
+| 2026-07-13 | Livingroom HDR + Bedroom SDR (client profiles); Bigscreen client HDR / forced SDR apps |
 
-## Outputs
+## Active patches (applied by flake)
 
-- `overlays.default` / `packages.*.{polaris-stream,gamescope-hdr,xdg-desktop-portal-gamescope,polaris-nvidia-pin}`
-- Polaris: master `2008458` + `combined.patch` + optional `0007-…-dmabuf.patch` (PR candidate)
-- gamescope: all four patches including prefer-dmabuf; WSI layer on (`enableWsi`)
-- Experimental polaris gist patches: archive only
+See [polaris/README.md](polaris/README.md), [gamescope/README.md](gamescope/README.md).
+
+| Package | Patches |
+|---------|---------|
+| polaris-stream | `01` portal dmabuf · `02` portal HDR · `03` web sessions |
+| gamescope-hdr | `01` PW HDR meta · `02` headless colorimetry · `03` prefer dmabuf |
+| xdg-desktop-portal-gamescope | `01` fix stream size |
+
+## Archived (not applied)
+
+| Tree | Why |
+|------|-----|
+| `archived/polaris/issue-152-series/` | Pre-topic rewrite; includes unused **0009** GL import |
+| `archived/polaris/experimental/` | Early gist DmaBuf experiments |
+| `archived/gamescope/pipewire-color-mgmt.patch` | Forced PQ paint — wash regression |
 
 ## Open work (GitHub Issues)
 
 | # | Topic |
 |---|--------|
-| [#1](https://github.com/luxus/polaris-hdr-linux-patches/issues/1) | HDR color / real HDR vs SDR |
-| [#2](https://github.com/luxus/polaris-hdr-linux-patches/issues/2) | Native DMA-BUF (replace SHM) |
-| [#3](https://github.com/luxus/polaris-hdr-linux-patches/issues/3) | Web UI preview + path/mode |
-| [#4](https://github.com/luxus/polaris-hdr-linux-patches/issues/4) | Stream mode: Gamescope Stream (portal) peer of Private Stream |
+| [#1](https://github.com/luxus/polaris-hdr-linux-patches/issues/1) | HDR color / real HDR vs SDR (parity with HDMI) |
+| [#2](https://github.com/luxus/polaris-hdr-linux-patches/issues/2) | Native DMA-BUF polish (mostly done on lea) |
+| [#3](https://github.com/luxus/polaris-hdr-linux-patches/issues/3) | Web UI preview + path/mode clarity |
+| [#4](https://github.com/luxus/polaris-hdr-linux-patches/issues/4) | Stream mode: Gamescope Stream peer of Private Stream |
 
-Upstream polaris: [papi-ux/polaris#206](https://github.com/papi-ux/polaris/issues/206) (restart UI flaky), [#207](https://github.com/papi-ux/polaris/pull/207) (session persist).
+## Verified on lea (2026-07-13 evening)
 
-## Verified 2026-07-13 (lea)
+| Path | Result |
+|------|--------|
+| livingroom + client HDR + Bigscreen | HDR Rec.2020+PQ, p010, dmabuf, encode OK |
+| Bedroom + profile HDR off | SDR stream, works |
+| Forced SDR Bigscreen app | `POLARIS_CLIENT_HDR=false` override path |
+| Split encode `auto` | often mode=0 at 4K60; encode headroom fine |
 
-**HDR switch (0011 portal metadata)** works:
-
-| Client | Request | Log result |
-|--------|---------|------------|
-| Bedroom | no HDR (`dynamic_range=0`) | `stream_hdr_enabled=false`, SDR Rec.601/709 |
-| livingroom | HDR on (`dynamic_range=1`) | `stream_hdr_enabled=true`, HDR Rec.2020 + PQ, metadata usable |
-
-Still **washed / not HDMI-like on both** (Bedroom SDR feel + livingroom HDR-tagged). Capture still logs:
-
-`Using 8-bit NV12 CUDA upload for capture path that cannot do 10-bit GPU frames` (`prefer_8bit` SHM path).
-
-Next for [#1](https://github.com/luxus/polaris-hdr-linux-patches/issues/1): 10-bit encode path / transfer-function correctness, not more metadata stubs.
-
-## Color vs transport (2026-07-13 evening)
-
-- **#2 DmaBuf:** green on Bedroom + livingroom (`capture_transport=dmabuf`, EGL import OK).
-- **#1 wash:** still present on livingroom HDR (incl. HDR game). Capture stays **BGRx/bgra8** while stream is HDR PQ + P010; env research (Chimera/WSI) does not unblock portal wash — see issue #1 comments.
+**Still open:** HDMI-like color (#1); Gamescope Stream as first-class UI mode (#4); dual labwc/gamescope switch product.

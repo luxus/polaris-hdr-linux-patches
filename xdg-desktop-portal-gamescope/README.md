@@ -1,9 +1,9 @@
 # xdg-desktop-portal-gamescope patches
 
-Upstream: [Jovian-Experiments/xdg-desktop-portal-gamescope](https://github.com/Jovian-Experiments/xdg-desktop-portal-gamescope)
+Applied by `pkgs/xdg-desktop-portal-gamescope` (Jovian-Experiments upstream).
 
-| Patch | Role |
-|-------|------|
-| `fix-stream-size.patch` | IceDOS: query PipeWire node size via `pw-cli` so portal negotiates client stream size |
+| Patch | Topic |
+|-------|--------|
+| `01-fix-stream-size.patch` | Negotiate stream size with the client (IceDOS) |
 
-Used with gamescope HDR headless + polaris portal capture.
+Package also wraps the portal with `WAYLAND_DISPLAY=gamescope-0` and installs a `gamescope.portal` file for ScreenCast/Screenshot/Access.

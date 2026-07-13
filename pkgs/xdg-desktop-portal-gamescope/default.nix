@@ -33,7 +33,7 @@ stdenv.mkDerivation (finalAttrs: {
 
   patches = [
     # IceDOS: negotiate stream size with the client (portal → host).
-    ../../xdg-desktop-portal-gamescope/fix-stream-size.patch
+    ../../xdg-desktop-portal-gamescope/01-fix-stream-size.patch
   ];
 
   env.PKG_CONFIG_DBUS_1_SESSION_BUS_SERVICES_DIR = "${placeholder "out"}/share/dbus-1/services";

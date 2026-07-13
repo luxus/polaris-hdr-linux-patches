@@ -1,0 +1,62 @@
+From ff0bb1db0217b6d19226635f798c0c784e40fa70 Mon Sep 17 00:00:00 2001
+From: patch-rebuild <patches@local>
+Date: Mon, 13 Jul 2026 22:21:40 +0200
+Subject: [PATCH] topic2: portal hdr metadata + force gate
+
+---
+ src/platform/linux/portal_grab.cpp | 39 ++++++++++++++++++++++++++++++
+ 1 file changed, 39 insertions(+)
+
+diff --git a/src/platform/linux/portal_grab.cpp b/src/platform/linux/portal_grab.cpp
+index b585f5a..468e38f 100644
+--- a/src/platform/linux/portal_grab.cpp
++++ b/src/platform/linux/portal_grab.cpp
+@@ -1136,6 +1136,45 @@ namespace portal {
+       return 0;
+     }
+ 
++    // Session prep writes $XDG_RUNTIME_DIR/polaris-hdr-force (1 when client HDR).
++    // Only then claim HDR + stub mastering metadata so SDR keeps normal colors.
++    static bool portal_force_hdr_enabled() {
++      const char *rt = std::getenv("XDG_RUNTIME_DIR");
++      if (!rt || !*rt) {
++        return false;
++      }
++      std::ifstream f(std::string(rt) + "/polaris-hdr-force");
++      std::string line;
++      if (!f || !std::getline(f, line)) {
++        return false;
++      }
++      while (!line.empty() && (line.back() == '\r' || line.back() == '\n' || line.back() == ' ')) {
++        line.pop_back();
++      }
++      return line == "1" || line == "true";
++    }
++
++    bool is_hdr() override {
++      return portal_force_hdr_enabled();
++    }
++
++    bool get_hdr_metadata(SS_HDR_METADATA &metadata) override {
++      if (!portal_force_hdr_enabled()) {
++        return false;
++      }
++      std::memset(&metadata, 0, sizeof(metadata));
++      // Normalized to 50_000 (see SS_HDR_METADATA). Rec.2020 + D65.
++      metadata.displayPrimaries[0] = {34000, 16000};
++      metadata.displayPrimaries[1] = {13250, 34500};
++      metadata.displayPrimaries[2] = {7500, 3000};
++      metadata.whitePoint = {15635, 16450};
++      metadata.maxDisplayLuminance = 1000;
++      metadata.minDisplayLuminance = 1;
++      metadata.maxContentLightLevel = 1000;
++      metadata.maxFrameAverageLightLevel = 400;
++      return true;
++    }
++
+     platf::capture_e
+     capture(const push_captured_image_cb_t &push_captured_image_cb,
+       const pull_free_image_cb_t &pull_free_image_cb,
+-- 
+2.54.0
+
