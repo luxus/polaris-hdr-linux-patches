@@ -113,8 +113,9 @@ stdenv'.mkDerivation (finalAttrs: {
     ../../polaris/upstream/issue-152-pipewire-capture/0007-portal-assume-encoder-render-node-for-dmabuf.patch
     # Portal SHM→CUDA NV12 + prefer_8bit when client asks 10-bit.
     ../../polaris/upstream/issue-152-pipewire-capture/0008-portal-dmabuf-and-direct-cuda-encode.patch
-    # Re-enable DmaBuf offer + robust GL import retries (gamescope linear BGRx / NVIDIA).
-    ../../polaris/upstream/issue-152-pipewire-capture/0009-portal-dmabuf-gl-import.patch
+    # 0009 (GL DmaBuf import) left out: fails on NVIDIA, no mid-stream SHM fallback → black video.
+    # Persist web UI auth sessions across polaris restarts (cookie alone is not enough).
+    ../../polaris/upstream/issue-152-pipewire-capture/0010-persist-web-ui-sessions.patch
   ];
 
   ui = buildNpmPackage {

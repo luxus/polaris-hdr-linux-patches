@@ -2,6 +2,7 @@
 
 | Date | State |
 |------|--------|
+| 2026-07-13 | **0010**: persist Web UI auth sessions across polaris restart |
 | 2026-07-13 | **0007 PR candidate**: assume `adapter_name` when PW omits capture render_node (same-GPU DmaBuf) |
 | 2026-07-13 | **Working flake** — packages + overlay published; experimental under `polaris/experimental/` (not applied) |
 | 2026-07-13 | #152 test: master + rebased combined patch; gamescope prefer-dmabuf |
