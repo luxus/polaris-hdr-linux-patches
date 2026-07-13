@@ -1,0 +1,105 @@
+From 2beb76cdaa18d6daa7cf2f2fd685dfa22591c02e Mon Sep 17 00:00:00 2001
+From: papi <20916260+papi-ux@users.noreply.github.com>
+Date: Sat, 11 Jul 2026 05:43:02 -0400
+Subject: [PATCH 4/6] fix(linux): report Portal frame residency accurately
+
+---
+ src/platform/linux/pipewire_capture.cpp       |  5 +++++
+ src/platform/linux/pipewire_capture.h         |  1 +
+ src/platform/linux/portal_grab.cpp            | 22 ++++++++++++-------
+ .../unit/platform/test_portal_grab_policy.cpp | 10 +++++++++
+ 4 files changed, 30 insertions(+), 8 deletions(-)
+
+diff --git a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewire_capture.cpp
+index 5167c7f..02c8f02 100644
+--- a/src/platform/linux/pipewire_capture.cpp
++++ b/src/platform/linux/pipewire_capture.cpp
+@@ -421,6 +421,11 @@ namespace pipewire_capture {
+     };
+   }
+ 
++  bool frame_requires_cpu_copy(const platf::frame_metadata_t &metadata) {
++    return metadata.transport != platf::frame_transport_e::dmabuf ||
++           metadata.residency != platf::frame_residency_e::gpu;
++  }
++
+   capture_t::capture_t(capture_options_t options):
+       options_(options) {
+     if (options_.remote_fd >= 0) {
+diff --git a/src/platform/linux/pipewire_capture.h b/src/platform/linux/pipewire_capture.h
+index cc82ddc..790b6fa 100644
+--- a/src/platform/linux/pipewire_capture.h
++++ b/src/platform/linux/pipewire_capture.h
+@@ -133,6 +133,7 @@ namespace pipewire_capture {
+ 
+   platf::frame_metadata_t cpu_frame_metadata();
+   platf::frame_metadata_t dmabuf_frame_metadata(std::string render_node);
++  bool frame_requires_cpu_copy(const platf::frame_metadata_t &metadata);
+ 
+   class capture_t: public std::enable_shared_from_this<capture_t> {
+   public:
+diff --git a/src/platform/linux/portal_grab.cpp b/src/platform/linux/portal_grab.cpp
+index 6875cc5..501e209 100644
+--- a/src/platform/linux/portal_grab.cpp
++++ b/src/platform/linux/portal_grab.cpp
+@@ -1153,11 +1153,11 @@ namespace portal {
+         return platf::capture_e::reinit;
+       }
+ 
+-      auto info = cap->frame_info();
++      auto frame_info = cap->frame_info();
+       pipewire_dmabuf_negotiated = cap->negotiated_dmabuf();
+-      if (cap->negotiated() && info.width > 0 && info.height > 0) {
+-        cfg_width = info.width;
+-        cfg_height = info.height;
++      if (cap->negotiated() && frame_info.width > 0 && frame_info.height > 0) {
++        cfg_width = frame_info.width;
++        cfg_height = frame_info.height;
+         this->env_width = cfg_width;
+         this->env_height = cfg_height;
+         this->width = cfg_width;
+@@ -1199,10 +1199,16 @@ namespace portal {
+         stream_stats::update_capture_metadata(img_out->frame_metadata);
+         if (!capture_transport_logged) {
+           capture_transport_logged = true;
+-          BOOST_LOG(warning) << "portal: capture_transport="sv << platf::from_frame_transport(img_out->frame_metadata.transport)
+-                             << " frame_residency="sv << platf::from_frame_residency(img_out->frame_metadata.residency)
+-                             << " frame_format="sv << platf::from_frame_format(img_out->frame_metadata.format)
+-                             << "; capture will incur an extra CPU-side copy/conversion path"sv;
++          if (pipewire_capture::frame_requires_cpu_copy(img_out->frame_metadata)) {
++            BOOST_LOG(warning) << "portal: capture_transport="sv << platf::from_frame_transport(img_out->frame_metadata.transport)
++                               << " frame_residency="sv << platf::from_frame_residency(img_out->frame_metadata.residency)
++                               << " frame_format="sv << platf::from_frame_format(img_out->frame_metadata.format)
++                               << "; capture will incur an extra CPU-side copy/conversion path"sv;
++          } else {
++            BOOST_LOG(info) << "portal: capture_transport="sv << platf::from_frame_transport(img_out->frame_metadata.transport)
++                            << " frame_residency="sv << platf::from_frame_residency(img_out->frame_metadata.residency)
++                            << " frame_format="sv << platf::from_frame_format(img_out->frame_metadata.format);
++          }
+         }
+         if (config::video.linux_display.capture_profile) {
+           const auto total_time = std::chrono::duration_cast<std::chrono::microseconds>(
+diff --git a/tests/unit/platform/test_portal_grab_policy.cpp b/tests/unit/platform/test_portal_grab_policy.cpp
+index 2291f49..09b7392 100644
+--- a/tests/unit/platform/test_portal_grab_policy.cpp
++++ b/tests/unit/platform/test_portal_grab_policy.cpp
+@@ -168,6 +168,16 @@ TEST(PipeWireCapturePolicyTests, DmaBufFramesReportGpuAndRenderNodeMetadata) {
+   EXPECT_EQ(metadata.device, "/dev/dri/renderD128");
+ }
+ 
++TEST(PipeWireCapturePolicyTests, CpuCopyWarningMatchesActualFrameResidency) {
++  EXPECT_TRUE(pipewire_capture::frame_requires_cpu_copy(pipewire_capture::cpu_frame_metadata()));
++  EXPECT_FALSE(pipewire_capture::frame_requires_cpu_copy(
++    pipewire_capture::dmabuf_frame_metadata("/dev/dri/renderD128")));
++
++  auto inconsistent = pipewire_capture::dmabuf_frame_metadata("/dev/dri/renderD128");
++  inconsistent.residency = platf::frame_residency_e::cpu;
++  EXPECT_TRUE(pipewire_capture::frame_requires_cpu_copy(inconsistent));
++}
++
+ TEST(PipeWireCapturePolicyTests, RenderNodeValidationAcceptsOnlyCanonicalRenderNodes) {
+   EXPECT_EQ(pipewire_capture::canonical_render_node("/dev/dri/renderD128"), "/dev/dri/renderD128");
+   EXPECT_EQ(pipewire_capture::canonical_render_node("/dev/dri/renderD0"), "/dev/dri/renderD0");
+-- 
+2.54.0
+

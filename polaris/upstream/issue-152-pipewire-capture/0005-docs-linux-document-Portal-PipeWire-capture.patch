@@ -1,0 +1,111 @@
+From 2ea4dec020b4006ca558ec770dcad2ee1c54d6c1 Mon Sep 17 00:00:00 2001
+From: papi <20916260+papi-ux@users.noreply.github.com>
+Date: Sat, 11 Jul 2026 05:43:14 -0400
+Subject: [PATCH 5/6] docs(linux): document Portal PipeWire capture
+
+---
+ README.md               |  1 +
+ docs/building.md        |  2 +-
+ docs/changelog.md       |  3 +++
+ docs/runtime.md         | 12 ++++++++++++
+ docs/troubleshooting.md | 22 ++++++++++++++++++++++
+ 5 files changed, 39 insertions(+), 1 deletion(-)
+
+diff --git a/README.md b/README.md
+index 4e3871c..61a55cd 100644
+--- a/README.md
++++ b/README.md
+@@ -45,6 +45,7 @@ what the host is actually doing.
+ | Browser Stream | Experimental | Chromium-oriented WebTransport/WebCodecs streaming path for browser testing |
+ | HDR / Main10 | Conditional | Main10 SDR can work when requested; true HDR requires real HDR metadata from the active capture path |
+ | AMD / VAAPI and software encode | Supported, expanding validation | AMD/Intel VAAPI and software fallback are supported; NVIDIA/NVENC remains the most exercised release target while AMD coverage grows |
++| Wayland Portal/PipeWire desktop capture | Supported; conditional GPU acceleration | Captures real Portal frames through PipeWire, using same-GPU DMA-BUF when the selected render node and modifier are importable and system memory otherwise |
+ 
+ ## Privacy and Local-First Defaults
+ 
+diff --git a/docs/building.md b/docs/building.md
+index 7de9f01..43110f4 100644
+--- a/docs/building.md
++++ b/docs/building.md
+@@ -72,7 +72,7 @@ those less-turnkey paths.
+ | Boost | Core libraries |
+ | OpenSSL | TLS and pairing |
+ | libevdev | Virtual input |
+-| PipeWire | Audio capture |
++| PipeWire | Portal desktop video transport and audio capture |
+ | Wayland client libs | Linux compositor integration |
+ | Node.js 18+ | Web UI build |
+ | grim | Dashboard preview capture for labwc/Wayland |
+diff --git a/docs/changelog.md b/docs/changelog.md
+index 2c8ca64..bdecb06 100644
+--- a/docs/changelog.md
++++ b/docs/changelog.md
+@@ -7,6 +7,9 @@ starts at `v1.0.0`.
+ 
+ ## Unreleased
+ 
++- Replaced the Linux Portal capture placeholder with a reusable PipeWire video stream that negotiates real frame formats, dimensions, and buffer ownership while preserving supported system-memory fallback
++- Added fail-closed same-GPU DMA-BUF capture for Portal streams, including exact DRM-render-node-to-CUDA ordinal binding and encoder reinitialization when transport or dimensions change
++
+ ## v1.3.0 - 2026-07-11
+ 
+ Feature release focused on self-service stream diagnostics, safer release visibility, display planning, and more resilient Linux capture startup.
+diff --git a/docs/runtime.md b/docs/runtime.md
+index ef0d397..b18c75f 100644
+--- a/docs/runtime.md
++++ b/docs/runtime.md
+@@ -59,6 +59,18 @@ Important runtime fields:
+ 
+ Deferred headless encoder capabilities are primed before first launch negotiation so Main10 support is advertised correctly on the first real launch. On Linux, Polaris uses RealtimeKit when available so thread-priority elevation can still succeed when the user service inherits conservative limits.
+ 
++### Portal/PipeWire desktop capture
++
++On a Wayland desktop, Desktop Display mode can use the XDG Desktop Portal ScreenCast API. The Portal grants a PipeWire remote and node; Polaris then owns the PipeWire video stream and negotiates packed 32-bit `BGRx`, `BGRA`, `RGBx`, or `RGBA` frames at the compositor-provided dimensions.
++
++For a GPU encoder, Polaris offers DMA-BUF only when the Portal reports an explicit capture render node, the configured encoder adapter is an explicit canonical `/dev/dri/renderD*` node on that same device, and EGL reports an importable format/modifier pair. CUDA import also resolves the render node through sysfs PCI identity and binds FFmpeg to that exact CUDA ordinal. An explicit node that cannot be mapped fails closed instead of silently choosing CUDA device 0.
++
++If any same-GPU or modifier check fails, PipeWire negotiates `MemPtr` and Polaris copies the packed frame into owned system memory. That is a supported compatibility path, not a broken stream. DMA-BUF frames remain owned by PipeWire while Polaris references their file descriptors; the capture queue retains only the newest pending, unconsumed frame and returns a replaced pending buffer to PipeWire. Frames already handed downstream keep their own PipeWire buffers until the last image reference is released, so multiple consumed frames may be in flight without early requeue.
++
++Encoder probes use a dummy Portal display and do not open a picker. The first real capture may open the desktop's system screen-sharing picker. Polaris requests persistent selection (`persist_mode=2`) and, when the Portal grants one, stores the restore token as `portal_restore_token.txt` beside the active `polaris.conf`. Later sessions offer that token to the Portal for automatic source selection; the desktop Portal remains the authority and may still ask again. Treat the token as private local state and never include its value in logs or support bundles.
++
++The real display establishes and negotiates the Portal/PipeWire stream before image allocation and encoder-factory selection. If the negotiated dimensions or transport later change, Polaris reinitializes the encoder with the new frame contract.
++
+ ## Linux LTS Headless Fallback Matrix
+ 
+ The 1.1.x validation target is the existing labwc Headless Stream architecture, not an Xvfb or gamescope replacement. Use Xvfb/gamescope only as investigation tools if this matrix exposes a real target environment that the current path cannot cover.
+diff --git a/docs/troubleshooting.md b/docs/troubleshooting.md
+index b42fabf..43649af 100644
+--- a/docs/troubleshooting.md
++++ b/docs/troubleshooting.md
+@@ -70,6 +70,28 @@ private compositor. If the client connects but shows an empty or black desktop w
+ that usually means the headless runtime is alive but nothing visible has been launched in it. Use
+ Desktop Display mode when you want to stream the already-running host desktop session.
+ 
++## Portal/PipeWire desktop capture falls back to system memory
++
++For Wayland Desktop Display capture, these messages show that the Portal session and PipeWire stream negotiated successfully:
++
++```text
++portal: PipeWire state: ... -> streaming
++portal: PipeWire format negotiated: <width>x<height> format=<format>
++portal: capture_transport=<shm|dmabuf> frame_residency=<cpu|gpu> frame_format=bgra8
++```
++
++The `capture_transport` line is the authoritative result. A healthy same-GPU path also logs `portal: PipeWire DMA-BUF format negotiated` and reports `capture_transport=dmabuf frame_residency=gpu` without a CPU-copy warning. If the log instead says DMA-BUF was disabled because the capture render node is missing, the encoder adapter is not an explicit canonical render node, the render nodes differ, or EGL exposes no importable modifier, Polaris should negotiate `MemPtr`, report `capture_transport=shm frame_residency=cpu`, and continue through system memory.
++
++For deterministic GPU selection, configure the encoder adapter as an explicit `/dev/dri/renderD*` path. Polaris compares the Portal capture node and encoder node before offering DMA-BUF. CUDA then maps that node to a CUDA ordinal through PCI sysfs identity; an unmappable explicit node fails rather than silently using device 0. On mixed-GPU systems, do not force DMA-BUF across different render nodes—use the system-memory fallback or select matching capture and encode devices.
++
++A log saying `PipeWire capture transport or dimensions changed; reinitializing encoder` is expected when the compositor renegotiates the frame contract. Repeated reinitialization without a stable `format negotiated` line is not expected; include the Portal/PipeWire state, negotiated format, render-node messages, and configured adapter path in the bug report. Do not include Portal tokens or credentials.
++
++### Reset persistent Portal selection
++
++The first real Portal capture may open the system picker. Polaris requests persistent selection and stores any granted restore token in `portal_restore_token.txt` beside the active `polaris.conf`. Do not post or copy the token value into a support report.
++
++To force the picker to appear again, stop Polaris, delete only `portal_restore_token.txt`, and start Polaris again. This resets Polaris' saved auto-selection but does not necessarily revoke the desktop Portal's permission. To revoke permission completely, also use the desktop environment's Privacy or Screen Sharing controls when it exposes them. The exact control varies between KDE, GNOME, and other Portal implementations.
++
+ ## Steam Big Picture black screen or tiny window
+ 
+ Clear Steam's HTML cache:
+-- 
+2.54.0
+

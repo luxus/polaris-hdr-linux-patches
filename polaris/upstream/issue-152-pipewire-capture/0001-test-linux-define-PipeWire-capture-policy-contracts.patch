@@ -1,0 +1,205 @@
+From c6b83c928045181676989e0166accb247eedc99e Mon Sep 17 00:00:00 2001
+From: papi <20916260+papi-ux@users.noreply.github.com>
+Date: Sat, 11 Jul 2026 02:35:16 -0400
+Subject: [PATCH 1/6] test(linux): define PipeWire capture policy contracts
+
+---
+ cmake/compile_definitions/linux.cmake         |  7 ++-
+ src/platform/linux/pipewire_capture.cpp       | 58 +++++++++++++++++++
+ src/platform/linux/pipewire_capture.h         | 25 ++++++++
+ .../unit/platform/test_portal_grab_policy.cpp | 49 +++++++++++++++-
+ 4 files changed, 135 insertions(+), 4 deletions(-)
+ create mode 100644 src/platform/linux/pipewire_capture.cpp
+ create mode 100644 src/platform/linux/pipewire_capture.h
+
+diff --git a/cmake/compile_definitions/linux.cmake b/cmake/compile_definitions/linux.cmake
+index c69c499..01a92cd 100644
+--- a/cmake/compile_definitions/linux.cmake
++++ b/cmake/compile_definitions/linux.cmake
+@@ -123,8 +123,8 @@ if(CUDA_FOUND)
+     add_compile_definitions(POLARIS_BUILD_CUDA)
+ endif()
+ 
+-# libdrm is required for both DRM (KMS) and Wayland
+-if(${POLARIS_ENABLE_DRM} OR ${POLARIS_ENABLE_WAYLAND})
++# libdrm is required for DRM (KMS), Wayland, and Portal capture
++if(${POLARIS_ENABLE_DRM} OR ${POLARIS_ENABLE_WAYLAND} OR ${POLARIS_ENABLE_PORTAL})
+     find_package(LIBDRM REQUIRED)
+ else()
+     set(LIBDRM_FOUND OFF)
+@@ -194,7 +194,8 @@ endif()
+ if(GIO_FOUND AND PIPEWIRE_FOUND)
+     add_compile_definitions(POLARIS_BUILD_PORTAL)
+     list(APPEND PLATFORM_TARGET_FILES
+-            "${CMAKE_SOURCE_DIR}/src/platform/linux/portal_grab.cpp")
++            "${CMAKE_SOURCE_DIR}/src/platform/linux/portal_grab.cpp"
++            "${CMAKE_SOURCE_DIR}/src/platform/linux/pipewire_capture.cpp")
+     message(STATUS "XDG Desktop Portal capture support enabled")
+ elseif(GIO_FOUND)
+     message(STATUS "XDG Desktop Portal capture not available (libpipewire-0.3 not found)")
+diff --git a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewire_capture.cpp
+new file mode 100644
+index 0000000..f7ec544
+--- /dev/null
++++ b/src/platform/linux/pipewire_capture.cpp
+@@ -0,0 +1,58 @@
++/**
++ * @file src/platform/linux/pipewire_capture.cpp
++ * @brief PipeWire capture format, copy, and frame metadata policy.
++ */
++
++#include "src/platform/linux/pipewire_capture.h"
++
++#include <algorithm>
++#include <utility>
++
++#include <drm_fourcc.h>
++#include <spa/param/video/raw.h>
++
++namespace pipewire_capture {
++  std::optional<std::uint32_t> drm_format_for_spa(std::uint32_t spa_format) {
++    switch (spa_format) {
++      case SPA_VIDEO_FORMAT_BGRx:
++        return DRM_FORMAT_XRGB8888;
++      case SPA_VIDEO_FORMAT_BGRA:
++        return DRM_FORMAT_ARGB8888;
++      case SPA_VIDEO_FORMAT_RGBx:
++        return DRM_FORMAT_XBGR8888;
++      case SPA_VIDEO_FORMAT_RGBA:
++        return DRM_FORMAT_ABGR8888;
++      default:
++        return std::nullopt;
++    }
++  }
++
++  std::size_t safe_row_copy_bytes(
++    std::size_t width_bytes,
++    std::int32_t source_stride,
++    std::size_t destination_stride
++  ) {
++    if (source_stride <= 0) {
++      return 0;
++    }
++
++    return std::min({width_bytes, static_cast<std::size_t>(source_stride), destination_stride});
++  }
++
++  platf::frame_metadata_t cpu_frame_metadata() {
++    return {
++      .transport = platf::frame_transport_e::shm,
++      .residency = platf::frame_residency_e::cpu,
++      .format = platf::frame_format_e::bgra8,
++    };
++  }
++
++  platf::frame_metadata_t dmabuf_frame_metadata(std::string render_node) {
++    return {
++      .transport = platf::frame_transport_e::dmabuf,
++      .residency = platf::frame_residency_e::gpu,
++      .format = platf::frame_format_e::bgra8,
++      .device = std::move(render_node),
++    };
++  }
++}  // namespace pipewire_capture
+diff --git a/src/platform/linux/pipewire_capture.h b/src/platform/linux/pipewire_capture.h
+new file mode 100644
+index 0000000..a9c152b
+--- /dev/null
++++ b/src/platform/linux/pipewire_capture.h
+@@ -0,0 +1,25 @@
++/**
++ * @file src/platform/linux/pipewire_capture.h
++ * @brief PipeWire capture format, copy, and frame metadata policy.
++ */
++#pragma once
++
++#include <cstddef>
++#include <cstdint>
++#include <optional>
++#include <string>
++
++#include "src/platform/common.h"
++
++namespace pipewire_capture {
++  std::optional<std::uint32_t> drm_format_for_spa(std::uint32_t spa_format);
++
++  std::size_t safe_row_copy_bytes(
++    std::size_t width_bytes,
++    std::int32_t source_stride,
++    std::size_t destination_stride
++  );
++
++  platf::frame_metadata_t cpu_frame_metadata();
++  platf::frame_metadata_t dmabuf_frame_metadata(std::string render_node);
++}  // namespace pipewire_capture
+diff --git a/tests/unit/platform/test_portal_grab_policy.cpp b/tests/unit/platform/test_portal_grab_policy.cpp
+index 2105ece..daf4f81 100644
+--- a/tests/unit/platform/test_portal_grab_policy.cpp
++++ b/tests/unit/platform/test_portal_grab_policy.cpp
+@@ -1,11 +1,18 @@
+ /**
+  * @file tests/unit/platform/test_portal_grab_policy.cpp
+- * @brief Test XDG Desktop Portal source selection policy.
++ * @brief Test XDG Desktop Portal and PipeWire capture policy.
+  */
+ 
+ #include "../../tests_common.h"
+ 
+ #include <cstdint>
++#include <optional>
++
++#include <drm_fourcc.h>
++#include <spa/param/video/raw.h>
++
++#include "src/platform/common.h"
++#include "src/platform/linux/pipewire_capture.h"
+ 
+ namespace portal {
+   std::uint32_t capture_type_for_stream_display_for_tests(bool headless_mode, bool use_cage_compositor);
+@@ -19,3 +26,43 @@ TEST(PortalGrabPolicyTests, PrivateAndWindowedCagePathsRequestWindowSource) {
+   EXPECT_EQ(portal::capture_type_for_stream_display_for_tests(true, true), 2u);
+   EXPECT_EQ(portal::capture_type_for_stream_display_for_tests(false, true), 2u);
+ }
++
++TEST(PipeWireCapturePolicyTests, MapsSupportedSpaFormatsToDrmFormats) {
++  EXPECT_EQ(pipewire_capture::drm_format_for_spa(SPA_VIDEO_FORMAT_BGRx), DRM_FORMAT_XRGB8888);
++  EXPECT_EQ(pipewire_capture::drm_format_for_spa(SPA_VIDEO_FORMAT_BGRA), DRM_FORMAT_ARGB8888);
++  EXPECT_EQ(pipewire_capture::drm_format_for_spa(SPA_VIDEO_FORMAT_RGBx), DRM_FORMAT_XBGR8888);
++  EXPECT_EQ(pipewire_capture::drm_format_for_spa(SPA_VIDEO_FORMAT_RGBA), DRM_FORMAT_ABGR8888);
++}
++
++TEST(PipeWireCapturePolicyTests, RejectsUnsupportedSpaFormats) {
++  EXPECT_EQ(pipewire_capture::drm_format_for_spa(SPA_VIDEO_FORMAT_NV12), std::nullopt);
++}
++
++TEST(PipeWireCapturePolicyTests, SafeRowCopyBytesClampsToEveryLimit) {
++  EXPECT_EQ(pipewire_capture::safe_row_copy_bytes(16, 24, 32), 16u);
++  EXPECT_EQ(pipewire_capture::safe_row_copy_bytes(24, 16, 32), 16u);
++  EXPECT_EQ(pipewire_capture::safe_row_copy_bytes(32, 24, 16), 16u);
++}
++
++TEST(PipeWireCapturePolicyTests, SafeRowCopyBytesRejectsNonPositiveSourceStride) {
++  EXPECT_EQ(pipewire_capture::safe_row_copy_bytes(16, 0, 32), 0u);
++  EXPECT_EQ(pipewire_capture::safe_row_copy_bytes(16, -1, 32), 0u);
++}
++
++TEST(PipeWireCapturePolicyTests, CpuFramesReportSharedMemoryMetadata) {
++  const auto metadata = pipewire_capture::cpu_frame_metadata();
++
++  EXPECT_EQ(metadata.transport, platf::frame_transport_e::shm);
++  EXPECT_EQ(metadata.residency, platf::frame_residency_e::cpu);
++  EXPECT_EQ(metadata.format, platf::frame_format_e::bgra8);
++  EXPECT_TRUE(metadata.device.empty());
++}
++
++TEST(PipeWireCapturePolicyTests, DmaBufFramesReportGpuAndRenderNodeMetadata) {
++  const auto metadata = pipewire_capture::dmabuf_frame_metadata("/dev/dri/renderD128");
++
++  EXPECT_EQ(metadata.transport, platf::frame_transport_e::dmabuf);
++  EXPECT_EQ(metadata.residency, platf::frame_residency_e::gpu);
++  EXPECT_EQ(metadata.format, platf::frame_format_e::bgra8);
++  EXPECT_EQ(metadata.device, "/dev/dri/renderD128");
++}
+-- 
+2.54.0
+

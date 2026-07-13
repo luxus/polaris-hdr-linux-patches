@@ -1,74 +1,82 @@
 # polaris-hdr-linux-patches
 
-**Status: ON HOLD (2026-07)**
+Public patch archive for **Linux GameStream / HDR research** around [polaris#152](https://github.com/papi-ux/polaris/issues/152).
 
-Experimental Linux patches for **HDR GameStream** on hybrid NVIDIA hosts:
-
-- [papi-ux/polaris](https://github.com/papi-ux/polaris) portal capture (DmaBuf / 10-bit / EGL)
-- [gamescope](https://github.com/ValveSoftware/gamescope) headless HDR + PipeWire DmaBuf
-
-Developed in [luxus/luxusAi](https://github.com/luxus/luxusAi) for machine **lea** (RTX 4090 + AMD iGPU).
-
-## Why on hold
-
-The gamescope + patched polaris path **works** for 4K HDR encode (DmaBuf `XB30`, NVENC ~8 ms, convert ~1 ms), but:
-
-- HDR **color** can look washed vs HDMI ([notes](docs/polaris-hdr-color.md))
-- Stack is heavy (custom gamescope, private portal, idle unit)
-- Encode ~8–9 ms at 4K HDR (60 Hz OK; 120 tight); HDR color still not HDMI-like
-- Daily lea stream is back on stock Polaris **labwc** SDR (DMA-BUF, ~4.5–5 ms encode @ 4K60)
-
-Patches stay here as reference for polaris#152 / rebased consumer work.
+Host flake / domain names stay private ([luxusAi](https://github.com/luxus/luxusAi) is private). **Patches and test notes live here** so upstream and others can reuse them without that tree.
 
 ## Layout
 
 ```
-polaris/     Apply to papi-ux/polaris (portal_grab, graphics, cuda)
-gamescope/   Apply to Valve gamescope (headless + pipewire)
-docs/        Design / color / fake-display notes from luxusAi
+gamescope/                 Valve gamescope patches (keep for tests)
+  pipewire-prefer-dmabuf.patch   ← required for #152 DMA-BUF producer
+  pipewire-hdr-metadata.patch
+  pipewire-color-mgmt.patch
+  headless-hdr-colorimetry.patch
+
+polaris/
+  upstream/issue-152-pipewire-capture/   ← papi-ux branch as patches (test this)
+  experimental/                          ← our gist spike (ON HOLD; do not stack for #152 test)
+
+docs/                      Color / DMA-BUF / fake-display notes
+TEST-issue-152.md          Exact maintainer test matrix
+STATUS.md                  Freeze / on-hold log
 ```
 
-### Polaris (apply in order)
+## Test #152 (current priority)
 
-1. `polaris/portal-dmabuf-capture.patch` — PipeWire DmaBuf, prefer `xBGR_210LE`, first-frame log  
-2. `polaris/egl-dmabuf-import.patch` — bare-tex + `TexStorageEXT` (NVIDIA + gamescope)  
-3. `polaris/cuda-gl-dmabuf.patch` — prefer `renderD*`, EGL import + mmap fallback  
+Maintainer branch: `perf/issue-152-pipewire-capture`  
+Tip archived as: `c2bb9cb475bb5aec3b8c12d1b5fb2d85baa565c3`  
+Base: `38159f31b0c4cea2e3373e373bf4aaf6aa38e043`
 
-Also published as a gist:  
-https://gist.github.com/luxus/e2cf68243c3f23b9934cea8ade4339bb
+**Rules from papi-ux:**
 
-Upstream context: [polaris#152](https://github.com/papi-ux/polaris/issues/152)
+1. Keep gamescope **`pipewire-prefer-dmabuf`**.
+2. **Do not** apply `polaris/experimental/*`.
+3. Run the upstream tip (or `combined.patch` on base).
+4. Focus window active; log `render_node`, format/modifier, `capture_transport`, `frame_residency`.
 
-### Gamescope
+Details: [TEST-issue-152.md](TEST-issue-152.md) · patch notes: [polaris/upstream/…](polaris/upstream/issue-152-pipewire-capture/README.md)
 
-1. `gamescope/headless-hdr-colorimetry.patch` — fake EDID / HDR on headless backend  
-2. `gamescope/pipewire-hdr-metadata.patch`  
-3. `gamescope/pipewire-color-mgmt.patch`  
-4. `gamescope/pipewire-prefer-dmabuf.patch` — DmaBuf without modifier fixation  
+### Nix (recommended)
 
-## Proven on lea (at freeze)
+```nix
+# polaris — pin tip, no experimental patches
+src = fetchFromGitHub {
+  owner = "papi-ux";
+  repo = "polaris";
+  rev = "c2bb9cb475bb5aec3b8c12d1b5fb2d85baa565c3";
+  hash = "sha256-YwcK2SR6Nx38a60Nxf73fKLzM6z/rBr2K8LKzykBiVM=";
+  fetchSubmodules = true;
+};
+patches = [ ];
+
+# gamescope — producer fix only (or full HDR set)
+patches = [ ./gamescope/pipewire-prefer-dmabuf.patch ];
+```
+
+Or stay on base rev and apply `polaris/upstream/issue-152-pipewire-capture/combined.patch`.
+
+## Experimental (on hold)
+
+`polaris/experimental/` — portal DmaBuf prefer + EGL TexStorageEXT + CUDA/GL path from the 4090 spike. Useful inspiration; **not** for the #152 validation run. See [STATUS.md](STATUS.md) and [docs/](docs/).
+
+## What still lives only in the private host flake
+
+- Full `polaris-stream` / `gamescope-hdr` / portal Nix packages and module wiring
+- Machine hostname, secrets, dual-GPU pin helpers, labwc default session
+- Force-EDID / JetKVM experiments
+
+**Possible next step:** move pure packages + a tiny flake here so `luxusAi` only consumes `inputs.polaris-hdr-linux-patches` (no domain leakage). Host modules stay private.
+
+## Proven on lea (experimental path, freeze)
 
 | Item | Result |
 |------|--------|
-| Capture | DmaBuf, 10-bit `XB30` / `xBGR_210LE` |
-| Import | EGL TexStorageEXT OK; CUDA extmem fails on gamescope dmabufs |
-| Dual-GPU | Pin NVIDIA `renderD128` (do not blacklist amdgpu) |
-| Encode | HEVC NVENC HDR P010; ~8–9 ms at 4K |
-| Client | Apple TV max 60 Hz |
-
-## Not included
-
-- Full NixOS module packaging (`polaris-stream`, `gamescope-hdr` packages) — lives in luxusAi  
-- Software force-EDID fake KWin head (`video=DP-1:e`) — still in luxusAi host config  
-- JetKVM — TC358743 ~1080p class; not a 4K HDR sink  
+| Capture | DmaBuf, 10-bit `XB30` / `xBGR_210LE` (with experimental + gamescope set) |
+| Import | EGL TexStorageEXT OK; CUDA extmem failed on gamescope dmabufs |
+| Dual-GPU | Pin NVIDIA `renderD*` |
+| Encode | HEVC NVENC HDR P010; ~8–9 ms at 4K (encode-bound) |
 
 ## License
 
-Patches are modifications of GPL projects (Polaris GPL-3, gamescope BSD-2-Clause / MIT mix).  
-Distribute patches under the same terms as the upstream trees you apply them to.
-
-## Resume checklist
-
-1. Rebase onto current polaris / gamescope tips  
-2. Re-test DmaBuf first frame + HDR metadata against maintainer branch `perf/issue-152-pipewire-capture`  
-3. Color fidelity (PQ / matrix) separate from capture transport  
+Patches modify GPL (Polaris) and BSD/MIT-mix (gamescope) trees — same terms as upstream when redistributing.

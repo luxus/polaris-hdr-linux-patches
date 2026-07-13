@@ -2,21 +2,26 @@
 
 | Date | State |
 |------|--------|
-| 2026-07-12 | **ON HOLD** — research archive; daily host stream is stock Polaris **labwc** SDR |
-| 2026-07-11 | Gamescope path green on lea: DmaBuf `XB30`, NVENC HDR P010, convert ~1 ms / encode ~8–9 ms |
-| Upstream | [polaris#152](https://github.com/papi-ux/polaris/issues/152); maintainer branch `perf/issue-152-pipewire-capture` (SDR-first) |
+| 2026-07-13 | **ACTIVE for #152 test** — archived maintainer branch `perf/issue-152-pipewire-capture` @ `c2bb9cb` as patches; experimental polaris moved under `polaris/experimental/` |
+| 2026-07-12 | ON HOLD research archive; daily host stream stock Polaris labwc SDR |
+| 2026-07-11 | Gamescope path green on lea (experimental): DmaBuf XB30, NVENC HDR P010 |
 
-Do not treat this tree as production. Rebase before reuse.
+## #152 validation (now)
 
-## Gamescope path — what we learned (short)
+- **Polaris:** tip `c2bb9cb…` **or** base `38159f3` + `upstream/issue-152-pipewire-capture/combined.patch`
+- **Polaris experimental:** off
+- **gamescope:** keep `pipewire-prefer-dmabuf` (producer)
+- **Report:** render_node, format/modifier, capture_transport, frame_residency
 
-1. **Producer first.** Unpatched gamescope only offers `SPA_DATA_DmaBuf` when modifier fixation succeeds → clients often stick on MemFd forever. Fix is gamescope-side (`pipewire-prefer-dmabuf.patch`), not more polaris thrash.
-2. **Idle has no frames.** `paint_pipewire()` only pushes when a focus window commits. Bare `sleep infinity` idle → zero frames (not a probe bug). Need Steam/gamepadui or a focus client.
-3. **Private portal.** Session `XDG_CURRENT_DESKTOP=KDE` steals ScreenCast unless gamescope portal + portals.conf + unit env are forced.
-4. **Same GPU.** Hybrid 4090+AMD: pin NVIDIA render node for gamescope *and* polaris/NVENC or import fails / falls back to SHM.
-5. **EGL import, not CUDA extmem.** CUDA external memory failed on gamescope dmabufs; `TexStorageEXT` + GL→CUDA worked. Default `DRM_FORMAT_MOD_LINEAR` when producer omits modifier (else GL 0x502).
-6. **Convert is cheap; encode is not.** RGB10→P010 ≈ 0.7–1.0 ms; NVENC at 4K HDR ≈ 8.2–8.8 ms (UI encode ms ≈ NVENC only). 120 Hz budget is encode-bound.
-7. **Color ≠ zero-copy.** Washed HDR vs HDMI is metadata/transfer/matrix (see `docs/polaris-hdr-color.md`), present even with good DmaBuf.
-8. **MemPtr escape hatch.** `POLARIS_PORTAL_DMABUF=0` forces CPU path when GPU descriptors + MemPtr would black-screen.
+## Gamescope path — learnings (short)
 
-See `docs/polaris-hdr-dmabuf-plan.md` for gated checklist (G0–G6).
+1. **Producer first.** Unpatched gamescope only offers `SPA_DATA_DmaBuf` when modifier fixation succeeds → clients stick on MemFd. Fix: `pipewire-prefer-dmabuf.patch`.
+2. **Idle has no frames.** Need a focus window (Steam/gamepadui/game).
+3. **Private portal.** KDE steals ScreenCast without gamescope portal + portals.conf + unit env.
+4. **Same GPU.** Hybrid: pin NVIDIA for gamescope and polaris/NVENC.
+5. **EGL import, not CUDA extmem** (experimental path).
+6. **Convert cheap; encode not.** ~1 ms convert / ~8–9 ms NVENC @ 4K HDR.
+7. **Color ≠ zero-copy.** Washed HDR is separate (see `docs/polaris-hdr-color.md`).
+8. **MemPtr escape.** Force CPU path when GPU descriptors + MemPtr would black-screen.
+
+See `docs/polaris-hdr-dmabuf-plan.md` for G0–G6.
