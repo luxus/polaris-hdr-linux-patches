@@ -31,6 +31,7 @@
 | [#1](https://github.com/luxus/polaris-hdr-linux-patches/issues/1) | HDR color / real HDR vs SDR |
 | [#2](https://github.com/luxus/polaris-hdr-linux-patches/issues/2) | Native DMA-BUF (replace SHM) |
 | [#3](https://github.com/luxus/polaris-hdr-linux-patches/issues/3) | Web UI preview + path/mode |
+| [#4](https://github.com/luxus/polaris-hdr-linux-patches/issues/4) | Stream mode: Gamescope Stream (portal) peer of Private Stream |
 
 Upstream polaris: [papi-ux/polaris#206](https://github.com/papi-ux/polaris/issues/206) (restart UI flaky), [#207](https://github.com/papi-ux/polaris/pull/207) (session persist).
 
