@@ -2,6 +2,7 @@
 
 | Date | State |
 |------|--------|
+| 2026-07-13 | **0015**: portal prefer xBGR_210LE (10-bit) over BGRx for gamescope HDR |
 | 2026-07-13 | **gamescope-hdr WSI**: `enableWsi = true` (VkLayer_FROG_gamescope_wsi for ENABLE_*_WSI) |
 | 2026-07-13 | **0014**: portal DmaBuf when may_use (LINEAR/mmap fallback from experimental) |
 | 2026-07-13 | **0013**: portal dmabuf_negotiate/eligibility diag logs (SHM why) |

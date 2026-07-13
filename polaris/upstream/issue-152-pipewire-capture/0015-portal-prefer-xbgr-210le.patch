@@ -1,0 +1,136 @@
+--- a/src/platform/linux/pipewire_capture.cpp	2026-07-13 20:36:19.913136257 +0200
++++ b/src/platform/linux/pipewire_capture.cpp	2026-07-13 20:36:40.711767044 +0200
+@@ -62,7 +62,8 @@
+     }
+ 
+     bool supported_bgra_source(std::uint32_t spa_format) {
+-      return spa_format == SPA_VIDEO_FORMAT_BGRx ||
++      return spa_format == SPA_VIDEO_FORMAT_xBGR_210LE ||
++             spa_format == SPA_VIDEO_FORMAT_BGRx ||
+              spa_format == SPA_VIDEO_FORMAT_BGRA ||
+              spa_format == SPA_VIDEO_FORMAT_RGBx ||
+              spa_format == SPA_VIDEO_FORMAT_RGBA;
+@@ -76,7 +77,10 @@
+       return std::find(modifiers.begin(), modifiers.end(), modifier) != modifiers.end();
+     }
+ 
+-    constexpr std::array<std::uint32_t, 4> packed_spa_formats {
++    // xBGR_210LE first: gamescope HDR advertises it; prefer over BGRx so stream
++    // is not 8-bit DmaBuf → P010 upconvert (washed HDR).
++    constexpr std::array<std::uint32_t, 5> packed_spa_formats {
++      SPA_VIDEO_FORMAT_xBGR_210LE,
+       SPA_VIDEO_FORMAT_BGRx,
+       SPA_VIDEO_FORMAT_BGRA,
+       SPA_VIDEO_FORMAT_RGBx,
+@@ -89,6 +93,8 @@
+ 
+   std::optional<std::uint32_t> drm_format_for_spa(std::uint32_t spa_format) {
+     switch (spa_format) {
++      case SPA_VIDEO_FORMAT_xBGR_210LE:
++        return DRM_FORMAT_XBGR2101010;
+       case SPA_VIDEO_FORMAT_BGRx:
+         return DRM_FORMAT_XRGB8888;
+       case SPA_VIDEO_FORMAT_BGRA:
+@@ -413,19 +419,27 @@
+     return new_state == stream_state_e::error || new_state == stream_state_e::unconnected;
+   }
+ 
+-  platf::frame_metadata_t cpu_frame_metadata() {
++  platf::frame_format_e spa_to_frame_format(std::uint32_t spa_format) {
++    // p010 = 10-bit class source for stats (no dedicated rgb10 enum).
++    if (spa_format == SPA_VIDEO_FORMAT_xBGR_210LE) {
++      return platf::frame_format_e::p010;
++    }
++    return platf::frame_format_e::bgra8;
++  }
++
++  platf::frame_metadata_t cpu_frame_metadata(std::uint32_t spa_format = SPA_VIDEO_FORMAT_BGRx) {
+     return {
+       .transport = platf::frame_transport_e::shm,
+       .residency = platf::frame_residency_e::cpu,
+-      .format = platf::frame_format_e::bgra8,
++      .format = spa_to_frame_format(spa_format),
+     };
+   }
+ 
+-  platf::frame_metadata_t dmabuf_frame_metadata(std::string render_node) {
++  platf::frame_metadata_t dmabuf_frame_metadata(std::string render_node, std::uint32_t spa_format = SPA_VIDEO_FORMAT_BGRx) {
+     return {
+       .transport = platf::frame_transport_e::dmabuf,
+       .residency = platf::frame_residency_e::gpu,
+-      .format = platf::frame_format_e::bgra8,
++      .format = spa_to_frame_format(spa_format),
+       .device = std::move(render_node),
+     };
+   }
+@@ -564,8 +578,9 @@
+       SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat,
+       SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video),
+       SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw),
+-      SPA_FORMAT_VIDEO_format, SPA_POD_CHOICE_ENUM_Id(5,
+-        SPA_VIDEO_FORMAT_BGRx,
++      SPA_FORMAT_VIDEO_format, SPA_POD_CHOICE_ENUM_Id(6,
++        SPA_VIDEO_FORMAT_xBGR_210LE,
++        SPA_VIDEO_FORMAT_xBGR_210LE,
+         SPA_VIDEO_FORMAT_BGRx,
+         SPA_VIDEO_FORMAT_BGRA,
+         SPA_VIDEO_FORMAT_RGBx,
+@@ -657,7 +672,9 @@
+       descriptor->sequence = front_dmabuf_sequence_;
+       descriptor->dmabuf_buffer_key = reinterpret_cast<std::uintptr_t>(front_dmabuf_buffer_->buffer);
+       descriptor->frame_timestamp = front_dmabuf_timestamp_;
+-      descriptor->frame_metadata = dmabuf_frame_metadata(options_.capture_render_node.value_or(std::string {}));
++      descriptor->frame_metadata = dmabuf_frame_metadata(
++        options_.capture_render_node.value_or(std::string {}),
++        front_dmabuf_frame_->spa_format);
+ 
+       auto retained_buffer = front_dmabuf_buffer_;
+       auto pooled = std::move(image);
+@@ -699,7 +716,7 @@
+     }
+ 
+     image->frame_timestamp = std::chrono::steady_clock::now();
+-    image->frame_metadata = cpu_frame_metadata();
++    image->frame_metadata = cpu_frame_metadata(front_info_.spa_format);
+     frame_available_ = false;
+     return true;
+   }
+--- a/src/platform/linux/portal_grab.cpp	2026-07-13 20:36:19.913501827 +0200
++++ b/src/platform/linux/portal_grab.cpp	2026-07-13 20:36:19.968729137 +0200
+@@ -7,6 +7,7 @@
+  * for the Polaris cage-as-window architecture.
+  */
+ 
++#include <algorithm>
+ #include <atomic>
+ #include <chrono>
+ #include <cstdlib>
+@@ -20,7 +21,9 @@
+ #include <thread>
+ #include <vector>
+ 
++#include <drm_fourcc.h>
+ #include <poll.h>
++#include <spa/param/video/raw.h>
+ #include <sys/mman.h>
+ #include <unistd.h>
+ 
+@@ -992,6 +995,18 @@
+       }
+       const auto portal_formats = pipewire_capture::task1_packed_dmabuf_formats(std::move(importable_modifiers));
+       dmabuf_formats = pipewire_capture::filter_importable_dmabuf_formats(portal_formats, egl_formats);
++      // gamescope HDR offers xBGR_210LE LINEAR; EGL query may omit XB30 even when
++      // import_source works (same LINEAR path as BGRx). Always offer LINEAR 10-bit.
++      const bool has_xb30_linear = std::any_of(dmabuf_formats.begin(), dmabuf_formats.end(), [](const auto &f) {
++        return f.spa_format == SPA_VIDEO_FORMAT_xBGR_210LE && f.modifier == DRM_FORMAT_MOD_LINEAR;
++      });
++      if (!has_xb30_linear) {
++        dmabuf_formats.insert(dmabuf_formats.begin(), {
++          .spa_format = SPA_VIDEO_FORMAT_xBGR_210LE,
++          .drm_fourcc = DRM_FORMAT_XBGR2101010,
++          .modifier = DRM_FORMAT_MOD_LINEAR,
++        });
++      }
+       const pipewire_capture::dmabuf_eligibility_t eligibility {
+         .capture_render_node = g_portal->capture_render_node,
+         .encoder_render_node = *encoder_render_node,

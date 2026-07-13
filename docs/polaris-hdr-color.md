@@ -121,3 +121,7 @@ After **0014**, portal capture is GPU DmaBuf + EGL import on both clients. Livin
 **Env research** (gamescope#1404, ChimeraOS#123, gamescope#2037): `GAMESCOPE_WAYLAND_DISPLAY` already set; KDE nested HDR fix N/A for headless. **WSI enabled** in `gamescope-hdr` (`enableWsi`) so `ENABLE_GAMESCOPE_WSI` / client-HDR `ENABLE_HDR_WSI` can load `VkLayer_FROG_gamescope_wsi`. See issue #1 comments for tables.
 
 Wash ranking no longer led by SHM — led by **8-bit capture + HDR tags** (+ metadata/convert).
+
+## Live update 2026-07-13 (0015 prefer 10-bit)
+
+Root cause of BGRx lock: polaris EnumFormat only listed 8-bit packed RGB while gamescope force-HDR **does** advertise `xBGR_210LE` (spa 81). **0015** prefers `xBGR_210LE` / `DRM_FORMAT_XBGR2101010` and force-offers LINEAR so negotiation can settle on 10-bit. Expect log: `spa_format=81` / `frame_format=p010` (10-bit class) when force-HDR.

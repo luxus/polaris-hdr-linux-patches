@@ -124,6 +124,8 @@ stdenv'.mkDerivation (finalAttrs: {
     ../../polaris/upstream/issue-152-pipewire-capture/0013-portal-dmabuf-negotiate-diag.patch
     # Offer DmaBuf when same-GPU eligible (LINEAR if SPA silent); EGL import + mmap fallback.
     ../../polaris/upstream/issue-152-pipewire-capture/0014-portal-dmabuf-linear-mmap-fallback.patch
+    # Prefer gamescope HDR xBGR_210LE (10-bit) over BGRx for portal capture.
+    ../../polaris/upstream/issue-152-pipewire-capture/0015-portal-prefer-xbgr-210le.patch
   ];
 
   ui = buildNpmPackage {
