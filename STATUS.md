@@ -2,6 +2,7 @@
 
 | Date | State |
 |------|--------|
+| 2026-07-13 | **gamescope true-SDR**: force=0 → no HDR expose/EDID/2020/display LUTs |
 | 2026-07-13 | **0012**: portal is_hdr gated on client HDR force file |
 | 2026-07-13 | **0011**: portal reports HDR metadata (client HDR switch can engage) |
 | 2026-07-13 | **0010**: persist Web UI auth sessions across polaris restart |

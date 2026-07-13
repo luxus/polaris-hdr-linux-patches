@@ -98,3 +98,14 @@ Fake KWin screen without dummy plug: [`polaris-kwin-fake-display.md`](./polaris-
 Portal **0011** makes client HDR engage (`stream_hdr_enabled=true` on livingroom; Bedroom stays SDR).  
 Visual: still washed on livingroom (HDR-tagged) and not HDMI-like on either device.  
 SHM capture still forces **prefer_8bit** NV12 CUDA upload — likely next bottleneck after metadata.
+
+## Live update 2026-07-13 (true-SDR gamescope)
+
+When client HDR force is off (`cv_hdr_enabled=false` / no force file):
+
+- Headless `SetHDR(false)`: **no** `bExposeHDRSupport`, no HDR EDID patch, Gamma22
+- PipeWire path keeps **screenshot** LUTs (not display HDR LUTs)
+- `outputEncodingEOTF` stays Gamma22 unless `g_bOutputHDREnabled`
+
+Goal: Bedroom SDR no longer inherits HDR-capable headless colorimetry wash.
+Livingroom HDR path unchanged when force is on. SHM `prefer_8bit` wash on HDR still open.

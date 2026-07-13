@@ -13,7 +13,8 @@ gamescope.overrideAttrs (old: {
     ../../gamescope/pipewire-prefer-dmabuf.patch
   ];
 
-  # IceDOS: PQ EOTF when HDR output is on; pin SDR-on-HDR defaults.
+  # PipeWire path: PQ encode only when HDR output is on (runtime; not static const).
+  # SDR headless colorimetry is handled in headless-hdr-colorimetry.patch (SetHDR false).
   postPatch = (old.postPatch or "") + ''
     if grep -q 'frameInfo.outputEncodingEOTF   = EOTF_Gamma22;' src/steamcompmgr.cpp; then
       substituteInPlace src/steamcompmgr.cpp \

@@ -1,5 +1,5 @@
---- a/src/Backends/HeadlessBackend.cpp	2026-07-11 03:15:08.443820896 +0300
-+++ b/src/Backends/HeadlessBackend.cpp	2026-07-11 06:00:00.000000000 +0300
+--- a/src/Backends/HeadlessBackend.cpp
++++ b/src/Backends/HeadlessBackend.cpp
 @@ -1,10 +1,15 @@
  #include "backend.h"
  #include "rendervulkan.hpp"
@@ -16,14 +16,17 @@
  
  namespace gamescope
  {
-@@ -18,9 +23,28 @@
+@@ -18,9 +23,31 @@
          {
          }
  
++		// bEnabled=false: true SDR (no HDR expose / EDID patch).
++		// Older revision always set bExposeHDRSupport=true -> washed SDR streams.
 +		void SetHDR( bool bEnabled )
 +		{
-+			m_HDRInfo.bExposeHDRSupport = true;
-+			m_HDRInfo.bAlwaysPatchEdid = true;
++			m_HDRInfo = {};
++			m_HDRInfo.bExposeHDRSupport = bEnabled;
++			m_HDRInfo.bAlwaysPatchEdid = bEnabled;
 +			m_FakeEdid = GenerateSimpleEdid( g_nOutputWidth, g_nOutputHeight );
 +
 +			if ( bEnabled )
@@ -46,7 +49,7 @@
          }
          virtual GamescopePanelOrientation GetCurrentOrientation() const override
          {
-@@ -28,11 +52,11 @@
+@@ -28,11 +55,11 @@
          }
          virtual bool SupportsHDR() const override
          {
@@ -60,7 +63,7 @@
          }
          virtual const BackendConnectorHDRInfo &GetHDRInfo() const override
          {
-@@ -54,7 +78,7 @@
+@@ -54,7 +81,7 @@
  
          virtual std::span<const uint8_t> GetRawEDID() const override
          {
@@ -69,7 +72,7 @@
          }
          virtual std::span<const uint32_t> GetValidDynamicRefreshRates() const override
          {
-@@ -66,10 +90,20 @@
+@@ -66,10 +93,20 @@
              displaycolorimetry_t *displayColorimetry, EOTF *displayEOTF,
              displaycolorimetry_t *outputEncodingColorimetry, EOTF *outputEncodingEOTF ) const override
          {
@@ -94,7 +97,7 @@
          }
  
          virtual const char *GetName() const override
-@@ -92,6 +126,7 @@
+@@ -92,6 +129,7 @@
  
      private:
          BackendConnectorHDRInfo m_HDRInfo{};
@@ -102,7 +105,7 @@
      };
  
  	class CHeadlessBackend final : public CBaseBackend
-@@ -137,10 +172,15 @@
+@@ -137,10 +175,18 @@
  			}
  
  			return true;
@@ -111,10 +114,13 @@
  
  		virtual bool PostInit() override
  		{
-+			m_Connector.SetHDR( cv_hdr_enabled.Get() );
-+			WritePatchedEdid( m_Connector.GetRawEDID(), m_Connector.GetHDRInfo(), false );
-+			update_connector_display_info_wl( NULL );
-+
++			const bool hdr = cv_hdr_enabled.Get();
++			m_Connector.SetHDR( hdr );
++			if ( hdr )
++			{
++				WritePatchedEdid( m_Connector.GetRawEDID(), m_Connector.GetHDRInfo(), false );
++				update_connector_display_info_wl( NULL );
++			}
  			return true;
  		}
  
