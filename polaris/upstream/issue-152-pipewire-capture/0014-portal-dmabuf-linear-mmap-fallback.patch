@@ -231,7 +231,15 @@
     * @param img The image to use for texture sizing.
 --- a/src/platform/linux/cuda.cpp
 +++ b/src/platform/linux/cuda.cpp
-@@ -483,7 +483,8 @@
+@@ -6,6 +6,7 @@
+ #include <array>
+ #include <bitset>
+ #include <fcntl.h>
++#include <sys/mman.h>
+ #include <filesystem>
+ #include <thread>
+ 
+@@ -483,7 +484,8 @@
  
          if (descriptor.dmabuf_buffer_key != 0) {
            for (auto &entry : rgb_cache) {
@@ -241,7 +249,7 @@
                active_rgb = &entry.rgb;
                break;
              }
-@@ -491,16 +492,66 @@
+@@ -491,16 +493,66 @@
          }
  
          if (!active_rgb) {
@@ -316,7 +324,7 @@
          }
  
          active_buffer_key = descriptor.dmabuf_buffer_key;
-@@ -510,7 +561,7 @@
+@@ -510,7 +562,7 @@
            active_rgb = &blank_rgb;
          } else {
            for (auto &entry : rgb_cache) {
@@ -325,7 +333,7 @@
                active_rgb = &entry.rgb;
                break;
              }
-@@ -586,6 +637,10 @@
+@@ -586,6 +638,10 @@
      std::array<rgb_cache_entry_t, 2> rgb_cache {};
      std::size_t rgb_cache_slot {0};
      std::uint64_t active_buffer_key {0};
