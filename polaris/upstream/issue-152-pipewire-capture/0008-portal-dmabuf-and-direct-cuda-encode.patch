@@ -1,6 +1,6 @@
 diff -ruN a/src/platform/common.h b/src/platform/common.h
---- a/src/platform/common.h	2026-07-13 14:10:00.524447882 +0200
-+++ b/src/platform/common.h	2026-07-13 14:13:05.534587728 +0200
+--- a/src/platform/common.h	2026-07-13 14:06:56.172432658 +0200
++++ b/src/platform/common.h	2026-07-13 14:43:12.510964846 +0200
 @@ -518,6 +518,9 @@
      }
  
@@ -12,8 +12,8 @@ diff -ruN a/src/platform/common.h b/src/platform/common.h
    };
  
 diff -ruN a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewire_capture.cpp
---- a/src/platform/linux/pipewire_capture.cpp	2026-07-13 14:10:00.528541418 +0200
-+++ b/src/platform/linux/pipewire_capture.cpp	2026-07-13 14:15:21.045907609 +0200
+--- a/src/platform/linux/pipewire_capture.cpp	2026-07-13 14:06:56.177478886 +0200
++++ b/src/platform/linux/pipewire_capture.cpp	2026-07-13 14:43:12.540465719 +0200
 @@ -735,7 +735,8 @@
      if (!data->chunk || (data->chunk->flags & SPA_CHUNK_FLAG_CORRUPTED)) {
        return false;
@@ -24,7 +24,7 @@ diff -ruN a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewir
      if (std::find(accepted_data_types.begin(), accepted_data_types.end(), data->type) == accepted_data_types.end()) {
        BOOST_LOG(warning) << "portal: unsupported PipeWire buffer data type="sv << data->type
                           << " data="sv << (data->data ? "mapped" : "null");
-@@ -743,28 +744,52 @@
+@@ -743,28 +744,46 @@
        return false;
      }
  
@@ -49,27 +49,21 @@ diff -ruN a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewir
          return false;
        }
  
-+      // First DMA-BUF → reinit encoder for GL/CUDA import. Local var must not be
-+      // named `info` near BOOST_LOG(info) (Boost.Log severity logger clash).
-+      bool first_dmabuf = false;
-+      std::uint64_t first_mod = frame_info.modifier;
++      // gamescope linear DmaBuf often has no SPA modifier; treat as LINEAR.
++      // Do NOT reinit here: full ScreenCast teardown resets negotiated_dmabuf_
++      // via format renegotiation and loops forever (out of buffers / no video).
 +      {
 +        std::lock_guard lk(frame_mtx_);
 +        if (!negotiated_dmabuf_) {
 +          negotiated_dmabuf_ = true;
-+          if (frame_info.modifier == DRM_FORMAT_MOD_INVALID) {
-+            frame_info.modifier = DRM_FORMAT_MOD_LINEAR;
-+            front_info_.modifier = DRM_FORMAT_MOD_LINEAR;
-+            first_mod = DRM_FORMAT_MOD_LINEAR;
-+          }
-+          first_dmabuf = true;
++          BOOST_LOG(info) << "portal: first PipeWire DMA-BUF buffer (modifier="sv
++                          << ((frame_info.modifier == DRM_FORMAT_MOD_INVALID) ? DRM_FORMAT_MOD_LINEAR : frame_info.modifier)
++                          << "); using GPU import path without reinit"sv;
 +        }
-+      }
-+      if (first_dmabuf) {
-+        BOOST_LOG(info) << "portal: first PipeWire DMA-BUF buffer (modifier="sv << first_mod
-+                        << "); reinitializing encoder for GPU import"sv;
-+        set_terminal(wait_result_e::reinit);
-+        return false;
++        if (frame_info.modifier == DRM_FORMAT_MOD_INVALID) {
++          frame_info.modifier = DRM_FORMAT_MOD_LINEAR;
++          front_info_.modifier = DRM_FORMAT_MOD_LINEAR;
++        }
 +      }
 +
 +      const auto modifier = (frame_info.modifier == DRM_FORMAT_MOD_INVALID) ? DRM_FORMAT_MOD_LINEAR : frame_info.modifier;
@@ -86,7 +80,7 @@ diff -ruN a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewir
          .plane_count = buffer->buffer->n_datas,
        };
        if (frame.plane_count > frame.planes.size()) {
-@@ -816,29 +841,29 @@
+@@ -816,29 +835,29 @@
        return false;
      }
  
@@ -123,6 +117,35 @@ diff -ruN a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewir
        front_dmabuf_frame_.reset();
        frame_available_ = true;
      }
+@@ -883,10 +902,15 @@
+       cap->set_terminal(wait_result_e::reinit);
+       return;
+     }
+-    const auto dmabuf_negotiated = cap->options_.may_use_dmabuf && offered_dmabuf;
++    // Same-GPU eligibility means we offer DmaBuf in ParamBuffers. gamescope often
++    // negotiates packed RGB without SPA_VIDEO_FLAG_MODIFIER but still sends DmaBuf.
++    // Mark negotiated immediately so the encoder is GL/CUDA import from Capture ready
++    // (first-buffer reinit thrash is a black-screen infinite loop).
++    const auto dmabuf_negotiated = cap->options_.may_use_dmabuf;
+     if (dmabuf_negotiated) {
+-      BOOST_LOG(info) << "portal: PipeWire DMA-BUF format negotiated with modifier="sv
+-                      << raw_info.modifier;
++      BOOST_LOG(info) << "portal: PipeWire DMA-BUF path (may_use_dmabuf); spa_modifier="sv
++                      << (has_modifier ? raw_info.modifier : DRM_FORMAT_MOD_LINEAR)
++                      << " has_modifier="sv << (has_modifier ? "true"sv : "false"sv);
+     }
+ 
+     pw_buffer *replaced_buffer = nullptr;
+@@ -905,7 +929,8 @@
+         .height = height,
+         .stride = width * 4,
+         .spa_format = raw_info.format,
+-        .modifier = raw_info.flags & SPA_VIDEO_FLAG_MODIFIER ? raw_info.modifier : DRM_FORMAT_MOD_INVALID,
++        .modifier = has_modifier ? raw_info.modifier
++                                 : (cap->options_.may_use_dmabuf ? DRM_FORMAT_MOD_LINEAR : DRM_FORMAT_MOD_INVALID),
+       };
+       cap->front_frame_.clear();
+       cap->back_frame_.clear();
 @@ -922,7 +947,10 @@
  
      BOOST_LOG(info) << "portal: PipeWire format negotiated: "sv
@@ -146,8 +169,8 @@ diff -ruN a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewir
      }
      const auto *buf_param = reinterpret_cast<const spa_pod *>(spa_pod_builder_add_object(
 diff -ruN a/src/platform/linux/portal_grab.cpp b/src/platform/linux/portal_grab.cpp
---- a/src/platform/linux/portal_grab.cpp	2026-07-13 14:10:00.528797813 +0200
-+++ b/src/platform/linux/portal_grab.cpp	2026-07-13 14:13:05.534951416 +0200
+--- a/src/platform/linux/portal_grab.cpp	2026-07-13 14:06:56.177719982 +0200
++++ b/src/platform/linux/portal_grab.cpp	2026-07-13 14:43:12.511360362 +0200
 @@ -1303,11 +1303,13 @@
          if (pipewire_dmabuf_negotiated) {
            return cuda::make_avcodec_gl_encode_device(w, h, 0, 0);
@@ -167,8 +190,8 @@ diff -ruN a/src/platform/linux/portal_grab.cpp b/src/platform/linux/portal_grab.
  #endif
        return std::make_unique<platf::avcodec_encode_device_t>();
 diff -ruN a/src/video.cpp b/src/video.cpp
---- a/src/video.cpp	2026-07-13 14:10:00.526300097 +0200
-+++ b/src/video.cpp	2026-07-13 14:13:05.535599102 +0200
+--- a/src/video.cpp	2026-07-13 14:06:56.174309990 +0200
++++ b/src/video.cpp	2026-07-13 14:43:12.511573585 +0200
 @@ -3352,6 +3352,17 @@
  
      if (dynamic_cast<const encoder_platform_formats_avcodec *>(encoder.platform_formats.get())) {
