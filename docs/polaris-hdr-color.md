@@ -92,3 +92,9 @@ Priority for **look** (not 120 FPS):
 ## Related plan
 
 Fake KWin screen without dummy plug: [`polaris-kwin-fake-display.md`](./polaris-kwin-fake-display.md).
+
+## Live update 2026-07-13
+
+Portal **0011** makes client HDR engage (`stream_hdr_enabled=true` on livingroom; Bedroom stays SDR).  
+Visual: still washed on livingroom (HDR-tagged) and not HDMI-like on either device.  
+SHM capture still forces **prefer_8bit** NV12 CUDA upload — likely next bottleneck after metadata.

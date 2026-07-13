@@ -25,3 +25,19 @@
 | [#3](https://github.com/luxus/polaris-hdr-linux-patches/issues/3) | Web UI preview + path/mode |
 
 Upstream polaris: [papi-ux/polaris#206](https://github.com/papi-ux/polaris/issues/206) (restart UI flaky), [#207](https://github.com/papi-ux/polaris/pull/207) (session persist).
+
+## Verified 2026-07-13 (lea)
+
+**HDR switch (0011 portal metadata)** works:
+
+| Client | Request | Log result |
+|--------|---------|------------|
+| Bedroom | no HDR (`dynamic_range=0`) | `stream_hdr_enabled=false`, SDR Rec.601/709 |
+| livingroom | HDR on (`dynamic_range=1`) | `stream_hdr_enabled=true`, HDR Rec.2020 + PQ, metadata usable |
+
+Still **washed / not HDMI-like on both** (Bedroom SDR feel + livingroom HDR-tagged). Capture still logs:
+
+`Using 8-bit NV12 CUDA upload for capture path that cannot do 10-bit GPU frames` (`prefer_8bit` SHM path).
+
+Next for [#1](https://github.com/luxus/polaris-hdr-linux-patches/issues/1): 10-bit encode path / transfer-function correctness, not more metadata stubs.
+
