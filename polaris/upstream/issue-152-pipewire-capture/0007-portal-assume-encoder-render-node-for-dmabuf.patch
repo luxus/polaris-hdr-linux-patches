@@ -1,0 +1,90 @@
+diff -ruN a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewire_capture.cpp
+--- a/src/platform/linux/pipewire_capture.cpp	2026-07-13 13:57:19.519327895 +0200
++++ b/src/platform/linux/pipewire_capture.cpp	2026-07-13 13:57:19.657828697 +0200
+@@ -128,6 +128,18 @@
+            eligibility.egl_import_supported;
+   }
+ 
++  std::optional<std::string> resolve_capture_render_node(
++    const std::optional<std::string> &portal_capture_render_node,
++    const std::optional<std::string> &encoder_render_node
++  ) {
++    if (portal_capture_render_node) {
++      if (auto node = canonical_render_node(*portal_capture_render_node)) {
++        return node;
++      }
++    }
++    return encoder_render_node;
++  }
++
+   std::vector<dmabuf_format_modifier_t> task1_packed_dmabuf_formats(std::vector<std::uint64_t> modifiers) {
+     std::vector<dmabuf_format_modifier_t> result;
+     for (const auto spa_format : packed_spa_formats) {
+diff -ruN a/src/platform/linux/pipewire_capture.h b/src/platform/linux/pipewire_capture.h
+--- a/src/platform/linux/pipewire_capture.h	2026-07-13 13:57:19.519391906 +0200
++++ b/src/platform/linux/pipewire_capture.h	2026-07-13 13:57:19.633059914 +0200
+@@ -99,6 +99,12 @@
+ 
+   std::optional<std::uint32_t> drm_format_for_spa(std::uint32_t spa_format);
+   std::optional<std::string> canonical_render_node(std::string_view path);
++  // When the portal stream omits capture render node, assume the operator-pinned
++  // encoder adapter (same-GPU headless/gamescope). Enables DmaBuf offer; MemFd stays fallback.
++  std::optional<std::string> resolve_capture_render_node(
++    const std::optional<std::string> &portal_capture_render_node,
++    const std::optional<std::string> &encoder_render_node
++  );
+   bool may_offer_dmabuf(const dmabuf_eligibility_t &eligibility);
+   std::vector<dmabuf_format_modifier_t> task1_packed_dmabuf_formats(std::vector<std::uint64_t> modifiers);
+   std::vector<dmabuf_format_modifier_t> filter_importable_dmabuf_formats(
+diff -ruN a/src/platform/linux/portal_grab.cpp b/src/platform/linux/portal_grab.cpp
+--- a/src/platform/linux/portal_grab.cpp	2026-07-13 13:57:19.519639829 +0200
++++ b/src/platform/linux/portal_grab.cpp	2026-07-13 13:57:31.873540447 +0200
+@@ -960,6 +960,15 @@
+     }
+ 
+     const auto encoder_render_node = pipewire_capture::canonical_render_node(config::video.adapter_name);
++    // Headless gamescope often omits SPA capture.device / render_node. If the
++    // operator set adapter_name to a render node (same GPU as NVENC), assume it.
++    if (!g_portal->capture_render_node) {
++      if (auto assumed = pipewire_capture::resolve_capture_render_node(std::nullopt, encoder_render_node)) {
++        BOOST_LOG(info) << "portal: stream omitted capture render node; assuming encoder adapter ["sv
++                        << *assumed << "] for same-GPU DmaBuf eligibility"sv;
++        g_portal->capture_render_node = std::move(assumed);
++      }
++    }
+     std::vector<pipewire_capture::dmabuf_format_modifier_t> dmabuf_formats;
+     bool may_use_dmabuf = false;
+     if (!g_portal->capture_render_node) {
+diff -ruN a/tests/unit/platform/test_portal_grab_policy.cpp b/tests/unit/platform/test_portal_grab_policy.cpp
+--- a/tests/unit/platform/test_portal_grab_policy.cpp	2026-07-13 13:57:19.521971826 +0200
++++ b/tests/unit/platform/test_portal_grab_policy.cpp	2026-07-13 13:57:19.696219761 +0200
+@@ -333,3 +333,29 @@
+   EXPECT_EQ(pipewire_capture::offered_buffer_data_types(false),
+             (std::vector<std::uint32_t> {SPA_DATA_MemFd, SPA_DATA_MemPtr}));
+ }
++
++TEST(PipeWireCapturePolicyTests, ResolveCaptureRenderNodePrefersPortalValue) {
++  const auto resolved = pipewire_capture::resolve_capture_render_node(
++    std::optional<std::string> {"/dev/dri/renderD128"},
++    std::optional<std::string> {"/dev/dri/renderD129"});
++  ASSERT_TRUE(resolved);
++  EXPECT_EQ(*resolved, "/dev/dri/renderD128");
++}
++
++TEST(PipeWireCapturePolicyTests, ResolveCaptureRenderNodeFallsBackToEncoderAdapter) {
++  const auto resolved = pipewire_capture::resolve_capture_render_node(
++    std::nullopt, std::optional<std::string> {"/dev/dri/renderD128"});
++  ASSERT_TRUE(resolved);
++  EXPECT_EQ(*resolved, "/dev/dri/renderD128");
++}
++
++TEST(PipeWireCapturePolicyTests, ResolveCaptureRenderNodeRejectsNonRenderPaths) {
++  EXPECT_FALSE(pipewire_capture::resolve_capture_render_node(
++    std::optional<std::string> {"/dev/dri/card1"},
++    std::nullopt));
++  const auto resolved = pipewire_capture::resolve_capture_render_node(
++    std::optional<std::string> {"/dev/dri/card1"},
++    std::optional<std::string> {"/dev/dri/renderD128"});
++  ASSERT_TRUE(resolved);
++  EXPECT_EQ(*resolved, "/dev/dri/renderD128");
++}

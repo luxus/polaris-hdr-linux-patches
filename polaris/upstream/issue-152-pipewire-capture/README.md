@@ -15,8 +15,10 @@ Maintainer SDR-first PipeWire / portal DMA-BUF capture (same-GPU check, honest S
 |------|-----|
 | `combined.patch` | Single `git apply` / Nix `patches` on **master** @ `2008458` |
 | `0001`…`0006-*.patch` | Same series as `git format-patch` (apply in order) |
+| `0007-portal-assume-encoder-render-node-for-dmabuf.patch` | **Optional PR candidate:** if PipeWire omits capture render node, assume `adapter_name` (same-GPU). Needs `adapter_name = /dev/dri/renderD*`. Enables DmaBuf offer; MemFd still fallback. |
 
 Verified: `git apply --check combined.patch` on a clean tree at master above.
+`0007` applies cleanly on top of `combined.patch`.
 
 ## Nix
 
