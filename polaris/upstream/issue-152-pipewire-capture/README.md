@@ -7,19 +7,32 @@
 
 ## What this is
 
-Maintainer SDR-first PipeWire / portal DMA-BUF capture (same-GPU check, honest SHM fallback, residency logging). **Not** our experimental gist patches.
+Maintainer SDR-first PipeWire / portal DMA-BUF capture (same-GPU check, honest SHM fallback, residency logging), plus local follow-ups that made **gamescope portal video work** on lea.
 
 ## Files
 
 | Path | Use |
 |------|-----|
-| `combined.patch` | Single `git apply` / Nix `patches` on **master** @ `2008458` |
+| `combined.patch` | Single `git apply` / Nix `patches` on **master** @ `2008458` (= 0001…0006) |
 | `0001`…`0006-*.patch` | Same series as `git format-patch` (apply in order) |
-| `0007-portal-assume-encoder-render-node-for-dmabuf.patch` | **PR candidate:** if PW omits capture render node, assume `adapter_name`. Needs `adapter_name = /dev/dri/renderD*`. |
-| `0008-portal-dmabuf-and-direct-cuda-encode.patch` | **PR candidate:** (1) offer DmaBuf without SPA modifier; reinit on first DMA-BUF. (2) portal SHM direct RAM→CUDA + prefer 8-bit when client asks 10-bit. |
+| `0007-portal-assume-encoder-render-node-for-dmabuf.patch` | If PW omits capture render node, assume `adapter_name` for same-GPU eligibility. Needs `adapter_name = /dev/dri/renderD*`. |
+| `0008-portal-dmabuf-and-direct-cuda-encode.patch` | **Portal SHM → CUDA NV12 + prefer_8bit** when client asks 10-bit. Gamescope linear DMA-BUF without SPA modifier **cannot** use GL import yet (`EGLImageTargetTexture2DOES` → `GL_INVALID_OPERATION`); do **not** force DmaBuf-without-modifier / first-buffer reinit (that looped ScreenCast and blacked video). |
 
-Verified: `git apply --check combined.patch` on a clean tree at master above.
-`0007`+`0008` apply cleanly on top of `combined.patch` (in order).
+Apply order in `pkgs/polaris-stream/default.nix`:
+
+```nix
+patches = [
+  ../../polaris/upstream/issue-152-pipewire-capture/combined.patch
+  ../../polaris/upstream/issue-152-pipewire-capture/0007-portal-assume-encoder-render-node-for-dmabuf.patch
+  ../../polaris/upstream/issue-152-pipewire-capture/0008-portal-dmabuf-and-direct-cuda-encode.patch
+];
+```
+
+## Known-good host pairing (luxusAi)
+
+- Idle gamescope: `--hdr-enabled --hdr-debug-force-output --hdr-debug-force-support` + paper-white nits (module `polaris-hdr-session`).
+- Capture: portal + gamescope ScreenCast (`polaris-hdr-use-portal`).
+- Expect web UI: encode CUDA/GPU/NV12, copy CPU (SHM) until DMA-BUF import is fixed.
 
 ## Nix
 
@@ -31,15 +44,8 @@ src = fetchFromGitHub {
   hash = "sha256-e/nltRUAwZ/l6JtBti6uzumzY4zhiwQEA02oPat+7Jw=";
   fetchSubmodules = true;
 };
-patches = [
-  ./combined.patch # or fetch from this repo
-];
 # Do NOT stack polaris/experimental/*
 ```
 
-## Test matrix (papi-ux on #152)
-
-1. Keep gamescope `gamescope/pipewire-prefer-dmabuf.patch`.
-2. Drop `polaris/experimental/*`.
-3. Master + this patch (or branch tip if you prefer).
-4. Focus window active; log `render_node`, format/modifier, `capture_transport`, `frame_residency`.
+Verified: `git apply --check combined.patch` on a clean tree at master above.
+`0007`+`0008` apply cleanly on top of `combined.patch` (in order).
