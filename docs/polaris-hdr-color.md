@@ -150,4 +150,10 @@ Retest after deploy: force-HDR livingroom → `spa_format=81` / not `bgra8`. Sti
 
 **Change:** remove `pipewire-color-mgmt.patch` and IceDOS `postPatch` (`EOTF_PQ` when HDR, sdrGamut/nits pin). Keep metadata (xBGR offer), headless colorimetry (Steam/DXVK HDR), prefer-dmabuf, WSI.
 
-Stock `paint_pipewire` = **screenshot LUTs + `EOTF_Gamma22`**. Hypothesis: our ColorMgmt+PQ paint made real game-HDR buffers worse for Polaris’s matrix-only convert. Risk: IceDOS “deep fried” (Gamma pixels + PQ stream tags) — polaris still tags HDR via portal force; compare game HDR on/off again after rebuild.
+Stock `paint_pipewire` = **screenshot LUTs + `EOTF_Gamma22`**.
+
+### Resolved: disable gamescope WSI env (lea)
+
+`ENABLE_GAMESCOPE_WSI` / `ENABLE_HDR_WSI` caused  
+`CreateSwapchainKHR: non-Gamescope swapchain / Hooking has failed` under Proton and washed HDR present.  
+With WSI env off (XWayland), user reports **correct HDR** (bright sparks). Keep WSI **out** of polaris-hdr-session; package may still build the layer.

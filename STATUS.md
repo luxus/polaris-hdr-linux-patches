@@ -2,7 +2,8 @@
 
 | Date | State |
 |------|--------|
-| 2026-07-13 | **gamescope paint**: drop color-mgmt + PQ postPatch; stock screenshot/Gamma22 PW paint (Polaris wash A/B) |
+| 2026-07-13 | **HDR OK on lea**: no ENABLE_*_WSI (WSI layer broke Proton present → wash); XWayland + 0015 xBGR + portal HDR |
+| 2026-07-13 | **gamescope paint**: drop color-mgmt + PQ postPatch; stock screenshot/Gamma22 PW paint |
 | 2026-07-13 | **0015**: portal prefer xBGR_210LE (10-bit) over BGRx for gamescope HDR |
 | 2026-07-13 | **gamescope-hdr WSI**: `enableWsi = true` (VkLayer_FROG_gamescope_wsi for ENABLE_*_WSI) |
 | 2026-07-13 | **0014**: portal DmaBuf when may_use (LINEAR/mmap fallback from experimental) |
