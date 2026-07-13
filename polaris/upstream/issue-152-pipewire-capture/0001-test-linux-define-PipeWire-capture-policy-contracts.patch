@@ -1,4 +1,4 @@
-From c6b83c928045181676989e0166accb247eedc99e Mon Sep 17 00:00:00 2001
+From 8eade9fe88073ccc0813c10ddc576c6e3eebff6e Mon Sep 17 00:00:00 2001
 From: papi <20916260+papi-ux@users.noreply.github.com>
 Date: Sat, 11 Jul 2026 02:35:16 -0400
 Subject: [PATCH 1/6] test(linux): define PipeWire capture policy contracts

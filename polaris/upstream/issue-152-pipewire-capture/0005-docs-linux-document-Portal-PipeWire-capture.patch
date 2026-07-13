@@ -1,4 +1,4 @@
-From 2ea4dec020b4006ca558ec770dcad2ee1c54d6c1 Mon Sep 17 00:00:00 2001
+From f03e76ea62afbec5f408b9a53f42767c4d8ec3a4 Mon Sep 17 00:00:00 2001
 From: papi <20916260+papi-ux@users.noreply.github.com>
 Date: Sat, 11 Jul 2026 05:43:14 -0400
 Subject: [PATCH 5/6] docs(linux): document Portal PipeWire capture
@@ -12,10 +12,10 @@ Subject: [PATCH 5/6] docs(linux): document Portal PipeWire capture
  5 files changed, 39 insertions(+), 1 deletion(-)
 
 diff --git a/README.md b/README.md
-index 4e3871c..61a55cd 100644
+index 5189263..aa964f7 100644
 --- a/README.md
 +++ b/README.md
-@@ -45,6 +45,7 @@ what the host is actually doing.
+@@ -49,6 +49,7 @@ what the host is actually doing.
  | Browser Stream | Experimental | Chromium-oriented WebTransport/WebCodecs streaming path for browser testing |
  | HDR / Main10 | Conditional | Main10 SDR can work when requested; true HDR requires real HDR metadata from the active capture path |
  | AMD / VAAPI and software encode | Supported, expanding validation | AMD/Intel VAAPI and software fallback are supported; NVIDIA/NVENC remains the most exercised release target while AMD coverage grows |
@@ -37,7 +37,7 @@ index 7de9f01..43110f4 100644
  | Node.js 18+ | Web UI build |
  | grim | Dashboard preview capture for labwc/Wayland |
 diff --git a/docs/changelog.md b/docs/changelog.md
-index 2c8ca64..bdecb06 100644
+index bc291c4..2f83e7c 100644
 --- a/docs/changelog.md
 +++ b/docs/changelog.md
 @@ -7,6 +7,9 @@ starts at `v1.0.0`.
@@ -47,9 +47,9 @@ index 2c8ca64..bdecb06 100644
 +- Replaced the Linux Portal capture placeholder with a reusable PipeWire video stream that negotiates real frame formats, dimensions, and buffer ownership while preserving supported system-memory fallback
 +- Added fail-closed same-GPU DMA-BUF capture for Portal streams, including exact DRM-render-node-to-CUDA ordinal binding and encoder reinitialization when transport or dimensions change
 +
- ## v1.3.0 - 2026-07-11
+ ## v1.3.1 - 2026-07-12
  
- Feature release focused on self-service stream diagnostics, safer release visibility, display planning, and more resilient Linux capture startup.
+ Security and pairing-state patch focused on current cryptography dependencies, durable client authorization, and clearer paired-device history.
 diff --git a/docs/runtime.md b/docs/runtime.md
 index ef0d397..b18c75f 100644
 --- a/docs/runtime.md

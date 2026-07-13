@@ -1,8 +1,9 @@
-# Upstream: `perf/issue-152-pipewire-capture`
+# Upstream: `perf/issue-152-pipewire-capture` rebased onto master
 
-**Source:** [papi-ux/polaris](https://github.com/papi-ux/polaris) branch `perf/issue-152-pipewire-capture`  
-**Tip (frozen for this archive):** `c2bb9cb475bb5aec3b8c12d1b5fb2d85baa565c3`  
-**Base:** `38159f31b0c4cea2e3373e373bf4aaf6aa38e043` (v1.3.0 prep — same pin luxusAi used before this test)
+**Source branch:** [papi-ux/polaris `perf/issue-152-pipewire-capture`](https://github.com/papi-ux/polaris/tree/perf/issue-152-pipewire-capture)  
+**Branch tip (historical):** `c2bb9cb475bb5aec3b8c12d1b5fb2d85baa565c3`  
+**Patch base (current master):** `2008458634c0d3f04f8abc39fab862bc69a47af8`  
+**Rebased tip (local only):** cherry-picked 6 commits onto master; only conflict was `docs/changelog.md` (Unreleased + keep v1.3.1 section).
 
 ## What this is
 
@@ -12,34 +13,30 @@ Maintainer SDR-first PipeWire / portal DMA-BUF capture (same-GPU check, honest S
 
 | Path | Use |
 |------|-----|
-| `combined.patch` | Single `git apply` / Nix `patches` entry on **base** above |
+| `combined.patch` | Single `git apply` / Nix `patches` on **master** @ `2008458` |
 | `0001`…`0006-*.patch` | Same series as `git format-patch` (apply in order) |
 
-Verified: `git apply --check combined.patch` on a clean tree at **base**.
+Verified: `git apply --check combined.patch` on a clean tree at master above.
 
-## Prefer pinning the rev for tests
-
-Laziest correct option for packaging:
+## Nix
 
 ```nix
 src = fetchFromGitHub {
   owner = "papi-ux";
   repo = "polaris";
-  rev = "c2bb9cb475bb5aec3b8c12d1b5fb2d85baa565c3";
-  hash = "..."; # recompute with fetchSubmodules = true
+  rev = "2008458634c0d3f04f8abc39fab862bc69a47af8"; # master
+  hash = "sha256-e/nltRUAwZ/l6JtBti6uzumzY4zhiwQEA02oPat+7Jw=";
   fetchSubmodules = true;
 };
-patches = [ ]; # do NOT stack polaris/experimental/*
+patches = [
+  ./combined.patch # or fetch from this repo
+];
+# Do NOT stack polaris/experimental/*
 ```
-
-Use the patch only if you must stay on the v1.3.0 base rev and cannot change `rev`.
 
 ## Test matrix (papi-ux on #152)
 
-1. **Keep** gamescope `gamescope/pipewire-prefer-dmabuf.patch` (producer must offer DmaBuf).
-2. **Drop** `polaris/experimental/*` (gist CUDA/EGL/portal patches).
-3. Run this branch tip (or `combined.patch` on base).
-4. Focus window active in gamescope (idle alone → zero frames).
-5. Capture log lines: `render_node`, format/modifier, `capture_transport`, `frame_residency`.
-
-See repo root `TEST-issue-152.md`.
+1. Keep gamescope `gamescope/pipewire-prefer-dmabuf.patch`.
+2. Drop `polaris/experimental/*`.
+3. Master + this patch (or branch tip if you prefer).
+4. Focus window active; log `render_node`, format/modifier, `capture_transport`, `frame_residency`.

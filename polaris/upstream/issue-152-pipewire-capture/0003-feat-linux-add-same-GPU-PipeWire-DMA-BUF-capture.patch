@@ -1,4 +1,4 @@
-From 48b726018adc16fdda702a3599a1874eedf14841 Mon Sep 17 00:00:00 2001
+From bcbbaadd02f223007950ef817d3c3c22e9490d31 Mon Sep 17 00:00:00 2001
 From: papi <20916260+papi-ux@users.noreply.github.com>
 Date: Sat, 11 Jul 2026 05:05:24 -0400
 Subject: [PATCH 3/6] feat(linux): add same-GPU PipeWire DMA-BUF capture
@@ -1301,10 +1301,10 @@ index c7bde84..6875cc5 100644
        return nullptr;
      }
 diff --git a/src/video.cpp b/src/video.cpp
-index 5a5bde3..0035f3f 100644
+index e9e9e78..4b390ed 100644
 --- a/src/video.cpp
 +++ b/src/video.cpp
-@@ -1972,6 +1972,12 @@ namespace video {
+@@ -1974,6 +1974,12 @@ namespace video {
    };
  
    static encoder_t *chosen_encoder;
@@ -1317,7 +1317,7 @@ index 5a5bde3..0035f3f 100644
    int active_hevc_mode;
    int active_av1_mode;
    bool last_encoder_probe_supported_ref_frames_invalidation = false;
-@@ -3807,6 +3813,12 @@ namespace video {
+@@ -3809,6 +3815,12 @@ namespace video {
    }
  
    bool validate_encoder(encoder_t &encoder, bool expect_failure) {
@@ -1330,7 +1330,7 @@ index 5a5bde3..0035f3f 100644
      const auto output_name {display_device::map_output_name(config::video.output_name)};
      std::shared_ptr<platf::display_t> disp;
  
-@@ -4420,7 +4432,18 @@ namespace video {
+@@ -4422,7 +4434,18 @@ namespace video {
    util::Either<avcodec_buffer_t, int> cuda_init_avcodec_hardware_input_buffer(platf::avcodec_encode_device_t *encode_device) {
      avcodec_buffer_t hw_device_buf;
  

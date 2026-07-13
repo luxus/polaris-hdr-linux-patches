@@ -1,8 +1,8 @@
 diff --git a/README.md b/README.md
-index 4e3871c..61a55cd 100644
+index 5189263..aa964f7 100644
 --- a/README.md
 +++ b/README.md
-@@ -45,6 +45,7 @@ what the host is actually doing.
+@@ -49,6 +49,7 @@ what the host is actually doing.
  | Browser Stream | Experimental | Chromium-oriented WebTransport/WebCodecs streaming path for browser testing |
  | HDR / Main10 | Conditional | Main10 SDR can work when requested; true HDR requires real HDR metadata from the active capture path |
  | AMD / VAAPI and software encode | Supported, expanding validation | AMD/Intel VAAPI and software fallback are supported; NVIDIA/NVENC remains the most exercised release target while AMD coverage grows |
@@ -74,7 +74,7 @@ index 7de9f01..43110f4 100644
  | Node.js 18+ | Web UI build |
  | grim | Dashboard preview capture for labwc/Wayland |
 diff --git a/docs/changelog.md b/docs/changelog.md
-index 2c8ca64..bdecb06 100644
+index bc291c4..2f83e7c 100644
 --- a/docs/changelog.md
 +++ b/docs/changelog.md
 @@ -7,6 +7,9 @@ starts at `v1.0.0`.
@@ -84,9 +84,9 @@ index 2c8ca64..bdecb06 100644
 +- Replaced the Linux Portal capture placeholder with a reusable PipeWire video stream that negotiates real frame formats, dimensions, and buffer ownership while preserving supported system-memory fallback
 +- Added fail-closed same-GPU DMA-BUF capture for Portal streams, including exact DRM-render-node-to-CUDA ordinal binding and encoder reinitialization when transport or dimensions change
 +
- ## v1.3.0 - 2026-07-11
+ ## v1.3.1 - 2026-07-12
  
- Feature release focused on self-service stream diagnostics, safer release visibility, display planning, and more resilient Linux capture startup.
+ Security and pairing-state patch focused on current cryptography dependencies, durable client authorization, and clearer paired-device history.
 diff --git a/docs/runtime.md b/docs/runtime.md
 index ef0d397..b18c75f 100644
 --- a/docs/runtime.md
@@ -2270,10 +2270,10 @@ index 9a247af..501e209 100644
        return nullptr;
      }
 diff --git a/src/video.cpp b/src/video.cpp
-index 5a5bde3..0035f3f 100644
+index e9e9e78..4b390ed 100644
 --- a/src/video.cpp
 +++ b/src/video.cpp
-@@ -1972,6 +1972,12 @@ namespace video {
+@@ -1974,6 +1974,12 @@ namespace video {
    };
  
    static encoder_t *chosen_encoder;
@@ -2286,7 +2286,7 @@ index 5a5bde3..0035f3f 100644
    int active_hevc_mode;
    int active_av1_mode;
    bool last_encoder_probe_supported_ref_frames_invalidation = false;
-@@ -3807,6 +3813,12 @@ namespace video {
+@@ -3809,6 +3815,12 @@ namespace video {
    }
  
    bool validate_encoder(encoder_t &encoder, bool expect_failure) {
@@ -2299,7 +2299,7 @@ index 5a5bde3..0035f3f 100644
      const auto output_name {display_device::map_output_name(config::video.output_name)};
      std::shared_ptr<platf::display_t> disp;
  
-@@ -4420,7 +4432,18 @@ namespace video {
+@@ -4422,7 +4434,18 @@ namespace video {
    util::Either<avcodec_buffer_t, int> cuda_init_avcodec_hardware_input_buffer(platf::avcodec_encode_device_t *encode_device) {
      avcodec_buffer_t hw_device_buf;
  

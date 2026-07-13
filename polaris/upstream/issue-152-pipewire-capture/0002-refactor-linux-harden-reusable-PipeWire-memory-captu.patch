@@ -1,4 +1,4 @@
-From c85b94d0f889486ca27310d07e8b965a943be7ba Mon Sep 17 00:00:00 2001
+From b62ffbdb4f62e0b9fdd6942129517765e326bc00 Mon Sep 17 00:00:00 2001
 From: papi <20916260+papi-ux@users.noreply.github.com>
 Date: Sat, 11 Jul 2026 03:51:11 -0400
 Subject: [PATCH 2/6] refactor(linux): harden reusable PipeWire memory capture
