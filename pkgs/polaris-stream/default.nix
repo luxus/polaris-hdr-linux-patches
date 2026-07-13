@@ -122,6 +122,8 @@ stdenv'.mkDerivation (finalAttrs: {
     ../../polaris/upstream/issue-152-pipewire-capture/0012-portal-hdr-force-gate.patch
     # Diag only: log may_use/has_modifier/offered/negotiated (why capture stays SHM).
     ../../polaris/upstream/issue-152-pipewire-capture/0013-portal-dmabuf-negotiate-diag.patch
+    # Offer DmaBuf when same-GPU eligible (LINEAR if SPA silent); EGL import + mmap fallback.
+    ../../polaris/upstream/issue-152-pipewire-capture/0014-portal-dmabuf-linear-mmap-fallback.patch
   ];
 
   ui = buildNpmPackage {

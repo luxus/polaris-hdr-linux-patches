@@ -2,6 +2,7 @@
 
 | Date | State |
 |------|--------|
+| 2026-07-13 | **0014**: portal DmaBuf when may_use (LINEAR/mmap fallback from experimental) |
 | 2026-07-13 | **0013**: portal dmabuf_negotiate/eligibility diag logs (SHM why) |
 | 2026-07-13 | **gamescope true-SDR**: force=0 → no HDR expose/EDID/2020/display LUTs |
 | 2026-07-13 | **0012**: portal is_hdr gated on client HDR force file |

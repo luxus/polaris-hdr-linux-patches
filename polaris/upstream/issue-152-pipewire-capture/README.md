@@ -52,3 +52,4 @@ src = fetchFromGitHub {
 Verified: `git apply --check combined.patch` on a clean tree at master above.
 `0007`+`0008` apply cleanly on top of `combined.patch` (in order).
 | `0013-portal-dmabuf-negotiate-diag.patch` | **Diag only**: log `dmabuf_eligibility` + `dmabuf_negotiate` (SHM vs DMA-BUF why). |
+| `0014-portal-dmabuf-linear-mmap-fallback.patch` | **DMA-BUF**: offer when may_use (LINEAR if SPA silent); TexStorageEXT+LINEAR import; mmap fallback; `POLARIS_PORTAL_DMABUF=0` escape. |
