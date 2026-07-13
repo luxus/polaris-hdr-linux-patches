@@ -143,3 +143,11 @@ IceDBorn “true headless HDR” = **PW + gamescope portal**, not DRM lease (lea
 | Private host-only portal D-Bus | no |
 
 Retest after deploy: force-HDR livingroom → `spa_format=81` / not `bgra8`. Still washed → convert/TF or Sunshine A/B, not more env.
+
+## Experiment 2026-07-13: stock paint_pipewire color
+
+**Observation:** Armored Core HDR **on** ≫ wash vs HDR **off** (mild). 0015 got **xBGR_210LE** + EGL OK — format is fine; TF path is wrong.
+
+**Change:** remove `pipewire-color-mgmt.patch` and IceDOS `postPatch` (`EOTF_PQ` when HDR, sdrGamut/nits pin). Keep metadata (xBGR offer), headless colorimetry (Steam/DXVK HDR), prefer-dmabuf, WSI.
+
+Stock `paint_pipewire` = **screenshot LUTs + `EOTF_Gamma22`**. Hypothesis: our ColorMgmt+PQ paint made real game-HDR buffers worse for Polaris’s matrix-only convert. Risk: IceDOS “deep fried” (Gamma pixels + PQ stream tags) — polaris still tags HDR via portal force; compare game HDR on/off again after rebuild.
