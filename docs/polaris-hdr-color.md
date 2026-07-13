@@ -109,3 +109,15 @@ When client HDR force is off (`cv_hdr_enabled=false` / no force file):
 
 Goal: Bedroom SDR no longer inherits HDR-capable headless colorimetry wash.
 Livingroom HDR path unchanged when force is on. SHM `prefer_8bit` wash on HDR still open.
+
+## Live update 2026-07-13 (DmaBuf green, wash remains)
+
+After **0014**, portal capture is GPU DmaBuf + EGL import on both clients. Livingroom still washed with HDR game:
+
+- Stream: HDR10 / Rec.2020+PQ / 10-bit tags / stub metadata
+- Capture: still `bgra8` (BGRx), not 10-bit `xBGR_210LE`
+- Encode: `p010`
+
+**Env research** (gamescope#1404, ChimeraOS#123, gamescope#2037): `GAMESCOPE_WAYLAND_DISPLAY` already set; `ENABLE_GAMESCOPE_WSI` no-op without WSI layer package; KDE nested HDR fix N/A for headless. See issue #1 comments for tables.
+
+Wash ranking no longer led by SHM — led by **8-bit capture + HDR tags** (+ metadata/convert).

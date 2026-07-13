@@ -45,3 +45,7 @@ Still **washed / not HDMI-like on both** (Bedroom SDR feel + livingroom HDR-tagg
 
 Next for [#1](https://github.com/luxus/polaris-hdr-linux-patches/issues/1): 10-bit encode path / transfer-function correctness, not more metadata stubs.
 
+## Color vs transport (2026-07-13 evening)
+
+- **#2 DmaBuf:** green on Bedroom + livingroom (`capture_transport=dmabuf`, EGL import OK).
+- **#1 wash:** still present on livingroom HDR (incl. HDR game). Capture stays **BGRx/bgra8** while stream is HDR PQ + P010; env research (Chimera/WSI) does not unblock portal wash — see issue #1 comments.
