@@ -1,0 +1,35 @@
+--- a/src/platform/linux/pipewire_capture.cpp
++++ b/src/platform/linux/pipewire_capture.cpp
+@@ -884,6 +884,16 @@
+       return;
+     }
+     const auto dmabuf_negotiated = cap->options_.may_use_dmabuf && offered_dmabuf;
++    // Diag only (no behavior change): why SHM vs DMA-BUF ParamBuffers.
++    BOOST_LOG(info) << "portal: dmabuf_negotiate"
++                    << " may_use="sv << (cap->options_.may_use_dmabuf ? "true"sv : "false"sv)
++                    << " has_modifier="sv << (has_modifier ? "true"sv : "false"sv)
++                    << " modifier="sv << raw_info.modifier
++                    << " spa_format="sv << raw_info.format
++                    << " formats="sv << cap->options_.dmabuf_formats.size()
++                    << " offered="sv << (offered_dmabuf ? "true"sv : "false"sv)
++                    << " negotiated="sv << (dmabuf_negotiated ? "true"sv : "false"sv)
++                    << " flags="sv << raw_info.flags;
+     if (dmabuf_negotiated) {
+       BOOST_LOG(info) << "portal: PipeWire DMA-BUF format negotiated with modifier="sv
+                       << raw_info.modifier;
+--- a/src/platform/linux/portal_grab.cpp
++++ b/src/platform/linux/portal_grab.cpp
+@@ -1004,6 +1004,13 @@
+                         << *encoder_render_node << ']';
+       }
+     }
++    // Diag only: eligibility snapshot before capture start (Bedroom/SDR SHM debug).
++    BOOST_LOG(info) << "portal: dmabuf_eligibility"
++                    << " may_use="sv << (may_use_dmabuf ? "true"sv : "false"sv)
++                    << " formats="sv << dmabuf_formats.size()
++                    << " capture_node="sv << g_portal->capture_render_node.value_or("none")
++                    << " encoder_node="sv << encoder_render_node.value_or("none")
++                    << " mem_type="sv << static_cast<int>(mem_type);
+ 
+     auto capture = std::make_shared<pipewire_capture::capture_t>(pipewire_capture::capture_options_t {
+       .remote_fd = g_portal->pw_remote_fd,

@@ -120,6 +120,8 @@ stdenv'.mkDerivation (finalAttrs: {
     ../../polaris/upstream/issue-152-pipewire-capture/0011-portal-hdr-metadata-report.patch
     # Gate portal is_hdr on $XDG_RUNTIME_DIR/polaris-hdr-force (client HDR only).
     ../../polaris/upstream/issue-152-pipewire-capture/0012-portal-hdr-force-gate.patch
+    # Diag only: log may_use/has_modifier/offered/negotiated (why capture stays SHM).
+    ../../polaris/upstream/issue-152-pipewire-capture/0013-portal-dmabuf-negotiate-diag.patch
   ];
 
   ui = buildNpmPackage {
