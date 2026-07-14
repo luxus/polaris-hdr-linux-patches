@@ -8,10 +8,10 @@ Applied by `pkgs/polaris-stream` onto **papi-ux/polaris** master
 | Patch | Default | What |
 |-------|---------|------|
 | `01`–`04` | always | portal SHM CUDA, HDR, web sessions, force-8bit |
-| `05-portal-dmabuf-linear-mmap.patch` | **off** (`enablePortalDmabufLinear`) | LINEAR DmaBuf negotiate + `cuImportExternalMemory` encode. **No mmap fallback.** On lea, import currently fails (`CUDA_ERROR_UNKNOWN`); keep off for SHM ~4.8–6ms video. |
+| `05-portal-dmabuf-linear-mmap.patch` | **on** (`enablePortalDmabufLinear`) | LINEAR DmaBuf negotiate + `cuImportExternalMemory` encode. **No mmap fallback.** No mmap fallback. If `cuImportExternalMemory` fails → no video (not silent mmap). |
 
 ## Lea notes
 
 - SHM (05 off): video OK, encode low.
-- 05 on + import fail: no video (by design — no silent mmap).
+- 05 on + import fail: no video (by design — no mmap fallback).
 - Next experiment: CUDA-EGL (`cudaGraphicsEGLRegisterImage`), not mmap.
