@@ -5,24 +5,13 @@ Applied by `pkgs/polaris-stream` onto **papi-ux/polaris** master
 
 ## Apply order
 
-| Patch | Topic | What it does |
-|-------|--------|----------------|
-| `01-portal-pipewire-dmabuf.patch` | Capture | #152 portal + SHM CUDA + diag + xBGR_210LE (no forced LINEAR DmaBuf) |
-| `02-portal-hdr-metadata.patch` | HDR | HDR10 metadata + polaris-hdr-force gate |
-| `03-web-ui-session-persist.patch` | Web UI | Persist auth sessions |
-| `04-sdr-force-8bit-encode.patch` | Encode | Non-HDR streams force 8-bit NV12 |
-| `05-portal-dmabuf-linear-mmap.patch` | DmaBuf CUDA | Negotiate LINEAR DmaBuf without SPA modifiers; **CUDA** `cuImportExternalMemory` + pitch2D + `RGBA_to_NV12` (not GL). Toggle: `enablePortalDmabufLinear` |
+| Patch | Default | What |
+|-------|---------|------|
+| `01`–`04` | always | portal SHM CUDA, HDR, web sessions, force-8bit |
+| `05-portal-dmabuf-linear-mmap.patch` | **off** (`enablePortalDmabufLinear`) | LINEAR DmaBuf negotiate + `cuImportExternalMemory` encode. **No mmap fallback.** On lea, import currently fails (`CUDA_ERROR_UNKNOWN`); keep off for SHM ~4.8–6ms video. |
 
-```bash
-git apply polaris/01-portal-pipewire-dmabuf.patch
-git apply polaris/02-portal-hdr-metadata.patch
-git apply polaris/03-web-ui-session-persist.patch
-git apply polaris/04-sdr-force-8bit-encode.patch
-git apply polaris/05-portal-dmabuf-linear-mmap.patch   # optional / default on in flake
-```
+## Lea notes
 
-## Notes
-
-- Without 05: SHM `cuda_ram_t` ~4.8ms encode on lea 4K.
-- Old 05 (GL EGL + mmap): ~8.8ms.
-- Current 05: CUDA import path — measure encode on lea.
+- SHM (05 off): video OK, encode low.
+- 05 on + import fail: no video (by design — no silent mmap).
+- Next experiment: CUDA-EGL (`cudaGraphicsEGLRegisterImage`), not mmap.

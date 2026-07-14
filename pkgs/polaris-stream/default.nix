@@ -70,7 +70,7 @@
   cudaPackages ? { },
   enableBrowserStream ? true,
   # Portal LINEAR DmaBuf + CUDA import encode. Default on for testing the CUDA path.
-  enablePortalDmabufLinear ? true,
+  enablePortalDmabufLinear ? false,
 }:
 let
   stdenv' = if cudaSupport then cudaPackages.backendStdenv else stdenv;
