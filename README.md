@@ -10,7 +10,7 @@ and are not applied.
 
 | Output | What |
 |--------|------|
-| `packages.<sys>.polaris-stream` | Polaris **master** + topic patches (`polaris/01`–`03`) |
+| `packages.<sys>.polaris-stream` | Polaris **master** + topic patches (`polaris/01`–`05`) |
 | `packages.<sys>.gamescope-hdr` | gamescope + HDR PW + prefer-dmabuf + WSI **built** |
 | `packages.<sys>.xdg-desktop-portal-gamescope` | Jovian portal + stream-size fix |
 | `packages.<sys>.polaris-nvidia-pin` | Hybrid-GPU pin shell snippet |
@@ -39,6 +39,8 @@ polaris/                       Topic patches applied by polaris-stream
   01-portal-pipewire-dmabuf.patch
   02-portal-hdr-metadata.patch
   03-web-ui-session-persist.patch
+  04-sdr-force-8bit-encode.patch
+  05-portal-dmabuf-linear-mmap.patch
 gamescope/                     Topic patches applied by gamescope-hdr
   01-pipewire-hdr-metadata.patch
   02-headless-hdr-colorimetry.patch
@@ -57,6 +59,8 @@ lib/ docs/ STATUS.md
 | 01 | Portal PipeWire capture + same-GPU DmaBuf + CUDA path + prefer xBGR_210LE | **Working** — dmabuf + p010 encode |
 | 02 | Portal HDR metadata + force-file gate | **Working** — client HDR → stream_hdr |
 | 03 | Web UI session persist | **Working** — survives polaris restart |
+| 04 | Force SDR streams to NV12 | **Working** |
+| 05 | LINEAR BGRx/BGRA DMA-BUF Vulkan→CUDA bridge + mmap fallback | **Build-validated; runtime validation pending** |
 
 ### gamescope (`gamescope/`)
 
@@ -74,7 +78,7 @@ lib/ docs/ STATUS.md
 
 ### Intentionally not applied
 
-- Polaris GL DmaBuf import (old 0009) — black video on NVIDIA  
+- Archived portal GL/EGL experiments — portal LINEAR capture uses the Vulkan bridge in polaris 05; legacy KMS/Wayland GL→CUDA remains active
 - Gist experimental DmaBuf stack — superseded by polaris 01  
 - gamescope forced PQ ColorMgmt paint — wash regression  
 

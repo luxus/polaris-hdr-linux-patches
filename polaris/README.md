@@ -3,16 +3,14 @@
 | Patch | Default | What |
 |-------|---------|------|
 | `01`–`04` | always | portal base, HDR, web, force-8bit |
-| `05` | **on** | LINEAR DmaBuf + **CUDA-EGL** (no GL convert); if that fails → **ERROR** `convert_path=mmap_cuda` + stats `encode_target_residency=cpu` (WebUI not gpu_native) |
+| `05` | **on** | LINEAR one-plane BGRx/BGRA DmaBuf → **Vulkan buffer copy** → CUDA/NVENC; failure sticks to loud `mmap_cuda` with CPU-residency stats |
 
 ## Convert paths
 
 | convert_path | Meaning |
 |--------------|---------|
-| `cuda_egl` | `eglCreateImage` + `cuGraphicsEGLRegisterImage` + CUDA `RGBA_to_NV12` (goal; no GL shaders) |
-| `cuda_mmap` | DmaBuf mmap → CUDA upload (fallback; loud) |
+| `vulkan_cuda` | cached Vulkan DMA-BUF source → persistent OPAQUE_FD destination/CUDA mapping → CUDA conversion |
+| `mmap_cuda` | DmaBuf mmap → CUDA upload (sticky fallback; not gpu_native) |
 | (01 SHM) | cuda_ram host path when 05 off / no DmaBuf |
 
-**Removed:** `cuImportExternalMemory` / `cuda_import` — always fails on gamescope portal FDs (see issue #5).
-
-No GL BGRA→NV12 convert in 05.
+The Vulkan bridge is portal-only. Existing GL→CUDA support remains unchanged for KMS, Wayland, and other tiled DMA-BUF capture.

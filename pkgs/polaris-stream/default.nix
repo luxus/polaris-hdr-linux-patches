@@ -51,6 +51,7 @@
   amf-headers,
   svt-av1,
   shaderc,
+  vulkan-headers,
   vulkan-loader,
   libappindicator,
   libnotify,
@@ -69,7 +70,7 @@
   cudaSupport ? config.cudaSupport,
   cudaPackages ? { },
   enableBrowserStream ? true,
-  # Portal LINEAR DmaBuf + CUDA-EGL (no GL) with loud mmap_cuda fallback. Default on.
+  # Portal LINEAR DmaBuf Vulkan→CUDA bridge with loud mmap_cuda fallback. Default on.
   enablePortalDmabufLinear ? true,
 }:
 let
@@ -119,7 +120,7 @@ stdenv'.mkDerivation (finalAttrs: {
     # 04: non-HDR streams stay 8-bit NV12
     ../../polaris/04-sdr-force-8bit-encode.patch
   ] ++ lib.optionals enablePortalDmabufLinear [
-    # 05: LINEAR DmaBuf + CUDA-EGL (no GL); loud mmap_cuda fallback + stats
+    # 05: LINEAR DmaBuf Vulkan→CUDA bridge; loud mmap_cuda fallback + stats
     ../../polaris/05-portal-dmabuf-linear-mmap.patch
   ];
 
@@ -242,6 +243,7 @@ stdenv'.mkDerivation (finalAttrs: {
   ++ lib.optionals cudaSupport [
     cudaPackages.cudatoolkit
     cudaPackages.cuda_cudart
+    vulkan-headers
   ];
 
   runtimeDependencies = [
