@@ -2,6 +2,7 @@
 
 | Date | State |
 |------|--------|
+| 2026-07-14 | **0014 split out**: optional `polaris/05` (`enablePortalDmabufLinear`); default ~4.8ms SHM-class; 0014 was ~8.8ms encode on lea |
 | 2026-07-13 | **Patch cleanup**: topic series under `polaris/` + `gamescope/`; old `0001`…`0015` + experimental → `archived/` |
 | 2026-07-13 | **HDR OK on lea**: no ENABLE_*_WSI; XWayland + prefer xBGR_210LE + portal HDR |
 | 2026-07-13 | **DmaBuf green**: `capture_transport=dmabuf`, EGL import OK, p010 encode |
@@ -13,7 +14,7 @@ See [polaris/README.md](polaris/README.md), [gamescope/README.md](gamescope/READ
 
 | Package | Patches |
 |---------|---------|
-| polaris-stream | `01` portal dmabuf · `02` portal HDR · `03` web sessions |
+| polaris-stream | `01` portal (SHM default) · `02` HDR · `03` web · `04` force-8bit · optional `05` LINEAR DmaBuf |
 | gamescope-hdr | `01` PW HDR meta · `02` headless colorimetry · `03` prefer dmabuf |
 | xdg-desktop-portal-gamescope | `01` fix stream size |
 

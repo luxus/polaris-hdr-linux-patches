@@ -1,46 +1,10 @@
-From a6bae27cd76c50940f307e6ed84bc9fe4382b59c Mon Sep 17 00:00:00 2001
 From: patch-rebuild <patches@local>
-Date: Mon, 13 Jul 2026 22:21:40 +0200
-Subject: [PATCH] topic1: portal pipewire dmabuf capture
+Subject: [PATCH] topic1: portal pipewire capture (SHM/diag; no 0014 LINEAR DmaBuf)
 
----
- README.md                                     |    1 +
- cmake/compile_definitions/linux.cmake         |   21 +-
- docs/building.md                              |    2 +-
- docs/changelog.md                             |    3 +
- docs/runtime.md                               |   12 +
- docs/troubleshooting.md                       |   22 +
- src/platform/common.h                         |    4 +
- src/platform/linux/cuda.cpp                   |  167 ++-
- src/platform/linux/graphics.cpp               |  111 +-
- src/platform/linux/pipewire_capture.cpp       | 1048 +++++++++++++++++
- src/platform/linux/pipewire_capture.h         |  211 ++++
- src/platform/linux/portal_grab.cpp            |  624 ++++++----
- src/video.cpp                                 |   36 +-
- src/video.h                                   |    6 +
- .../platform/test_cuda_gl_encode_device.cpp   |    2 +
- .../unit/platform/test_portal_grab_policy.cpp |  342 +++++-
- 16 files changed, 2332 insertions(+), 280 deletions(-)
- create mode 100644 src/platform/linux/pipewire_capture.cpp
- create mode 100644 src/platform/linux/pipewire_capture.h
-
-diff --git a/README.md b/README.md
-index 5189263..aa964f7 100644
---- a/README.md
-+++ b/README.md
-@@ -49,6 +49,7 @@ what the host is actually doing.
- | Browser Stream | Experimental | Chromium-oriented WebTransport/WebCodecs streaming path for browser testing |
- | HDR / Main10 | Conditional | Main10 SDR can work when requested; true HDR requires real HDR metadata from the active capture path |
- | AMD / VAAPI and software encode | Supported, expanding validation | AMD/Intel VAAPI and software fallback are supported; NVIDIA/NVENC remains the most exercised release target while AMD coverage grows |
-+| Wayland Portal/PipeWire desktop capture | Supported; conditional GPU acceleration | Captures real Portal frames through PipeWire, using same-GPU DMA-BUF when the selected render node and modifier are importable and system memory otherwise |
- 
- ## Privacy and Local-First Defaults
- 
-diff --git a/cmake/compile_definitions/linux.cmake b/cmake/compile_definitions/linux.cmake
-index c69c499..02e184f 100644
---- a/cmake/compile_definitions/linux.cmake
-+++ b/cmake/compile_definitions/linux.cmake
-@@ -123,8 +123,8 @@ if(CUDA_FOUND)
+diff -ruN '--exclude=.git' p-base/cmake/compile_definitions/linux.cmake p-no14/cmake/compile_definitions/linux.cmake
+--- a/cmake/compile_definitions/linux.cmake	2026-07-14 03:28:50.871109075 +0200
++++ b/cmake/compile_definitions/linux.cmake	2026-07-14 03:28:51.745610823 +0200
+@@ -123,8 +123,8 @@
      add_compile_definitions(POLARIS_BUILD_CUDA)
  endif()
  
@@ -51,7 +15,7 @@ index c69c499..02e184f 100644
      find_package(LIBDRM REQUIRED)
  else()
      set(LIBDRM_FOUND OFF)
-@@ -182,24 +182,27 @@ if(${POLARIS_ENABLE_PORTAL})
+@@ -182,24 +182,27 @@
      find_package(PkgConfig QUIET)
      if(PkgConfig_FOUND)
          pkg_check_modules(GIO gio-2.0)
@@ -86,11 +50,10 @@ index c69c499..02e184f 100644
  endif()
  
  # vaapi
-diff --git a/docs/building.md b/docs/building.md
-index 7de9f01..43110f4 100644
---- a/docs/building.md
-+++ b/docs/building.md
-@@ -72,7 +72,7 @@ those less-turnkey paths.
+diff -ruN '--exclude=.git' p-base/docs/building.md p-no14/docs/building.md
+--- a/docs/building.md	2026-07-14 03:28:50.871702576 +0200
++++ b/docs/building.md	2026-07-14 03:28:51.745610823 +0200
+@@ -72,7 +72,7 @@
  | Boost | Core libraries |
  | OpenSSL | TLS and pairing |
  | libevdev | Virtual input |
@@ -99,11 +62,10 @@ index 7de9f01..43110f4 100644
  | Wayland client libs | Linux compositor integration |
  | Node.js 18+ | Web UI build |
  | grim | Dashboard preview capture for labwc/Wayland |
-diff --git a/docs/changelog.md b/docs/changelog.md
-index bc291c4..2f83e7c 100644
---- a/docs/changelog.md
-+++ b/docs/changelog.md
-@@ -7,6 +7,9 @@ starts at `v1.0.0`.
+diff -ruN '--exclude=.git' p-base/docs/changelog.md p-no14/docs/changelog.md
+--- a/docs/changelog.md	2026-07-14 03:28:50.871702576 +0200
++++ b/docs/changelog.md	2026-07-14 03:28:51.745633836 +0200
+@@ -7,6 +7,9 @@
  
  ## Unreleased
  
@@ -113,11 +75,10 @@ index bc291c4..2f83e7c 100644
  ## v1.3.1 - 2026-07-12
  
  Security and pairing-state patch focused on current cryptography dependencies, durable client authorization, and clearer paired-device history.
-diff --git a/docs/runtime.md b/docs/runtime.md
-index ef0d397..b18c75f 100644
---- a/docs/runtime.md
-+++ b/docs/runtime.md
-@@ -59,6 +59,18 @@ Important runtime fields:
+diff -ruN '--exclude=.git' p-base/docs/runtime.md p-no14/docs/runtime.md
+--- a/docs/runtime.md	2026-07-14 03:28:50.871842109 +0200
++++ b/docs/runtime.md	2026-07-14 03:28:51.745644166 +0200
+@@ -59,6 +59,18 @@
  
  Deferred headless encoder capabilities are primed before first launch negotiation so Main10 support is advertised correctly on the first real launch. On Linux, Polaris uses RealtimeKit when available so thread-priority elevation can still succeed when the user service inherits conservative limits.
  
@@ -136,11 +97,10 @@ index ef0d397..b18c75f 100644
  ## Linux LTS Headless Fallback Matrix
  
  The 1.1.x validation target is the existing labwc Headless Stream architecture, not an Xvfb or gamescope replacement. Use Xvfb/gamescope only as investigation tools if this matrix exposes a real target environment that the current path cannot cover.
-diff --git a/docs/troubleshooting.md b/docs/troubleshooting.md
-index b42fabf..43649af 100644
---- a/docs/troubleshooting.md
-+++ b/docs/troubleshooting.md
-@@ -70,6 +70,28 @@ private compositor. If the client connects but shows an empty or black desktop w
+diff -ruN '--exclude=.git' p-base/docs/troubleshooting.md p-no14/docs/troubleshooting.md
+--- a/docs/troubleshooting.md	2026-07-14 03:28:50.920071780 +0200
++++ b/docs/troubleshooting.md	2026-07-14 03:28:51.745654265 +0200
+@@ -70,6 +70,28 @@
  that usually means the headless runtime is alive but nothing visible has been launched in it. Use
  Desktop Display mode when you want to stream the already-running host desktop session.
  
@@ -169,11 +129,21 @@ index b42fabf..43649af 100644
  ## Steam Big Picture black screen or tiny window
  
  Clear Steam's HTML cache:
-diff --git a/src/platform/common.h b/src/platform/common.h
-index 3afc15f..ad92897 100644
---- a/src/platform/common.h
-+++ b/src/platform/common.h
-@@ -518,11 +518,15 @@ namespace platf {
+diff -ruN '--exclude=.git' p-base/README.md p-no14/README.md
+--- a/README.md	2026-07-14 03:28:50.870628177 +0200
++++ b/README.md	2026-07-14 03:28:51.744777188 +0200
+@@ -49,6 +49,7 @@
+ | Browser Stream | Experimental | Chromium-oriented WebTransport/WebCodecs streaming path for browser testing |
+ | HDR / Main10 | Conditional | Main10 SDR can work when requested; true HDR requires real HDR metadata from the active capture path |
+ | AMD / VAAPI and software encode | Supported, expanding validation | AMD/Intel VAAPI and software fallback are supported; NVIDIA/NVENC remains the most exercised release target while AMD coverage grows |
++| Wayland Portal/PipeWire desktop capture | Supported; conditional GPU acceleration | Captures real Portal frames through PipeWire, using same-GPU DMA-BUF when the selected render node and modifier are importable and system memory otherwise |
+ 
+ ## Privacy and Local-First Defaults
+ 
+diff -ruN '--exclude=.git' p-base/src/platform/common.h p-no14/src/platform/common.h
+--- a/src/platform/common.h	2026-07-14 03:28:50.923097393 +0200
++++ b/src/platform/common.h	2026-07-14 03:28:51.745654265 +0200
+@@ -518,11 +518,15 @@
      }
  
      video::sunshine_colorspace_t colorspace;
@@ -189,19 +159,10 @@ index 3afc15f..ad92897 100644
      AVFrame *frame {};
  
      int convert(platf::img_t &img) override {
-diff --git a/src/platform/linux/cuda.cpp b/src/platform/linux/cuda.cpp
-index 5f7f12a..4f2c5b9 100644
---- a/src/platform/linux/cuda.cpp
-+++ b/src/platform/linux/cuda.cpp
-@@ -6,6 +6,7 @@
- #include <array>
- #include <bitset>
- #include <fcntl.h>
-+#include <sys/mman.h>
- #include <filesystem>
- #include <thread>
- 
-@@ -110,6 +111,7 @@ namespace cuda {
+diff -ruN '--exclude=.git' p-base/src/platform/linux/cuda.cpp p-no14/src/platform/linux/cuda.cpp
+--- a/src/platform/linux/cuda.cpp	2026-07-14 03:28:50.923670095 +0200
++++ b/src/platform/linux/cuda.cpp	2026-07-14 03:28:51.763247876 +0200
+@@ -110,6 +110,7 @@
        }
  
        data = (void *) 0x1;
@@ -209,7 +170,7 @@ index 5f7f12a..4f2c5b9 100644
  
        width = in_width;
        height = in_height;
-@@ -275,6 +277,50 @@ namespace cuda {
+@@ -275,6 +276,50 @@
      return -1;
    }
  
@@ -260,7 +221,7 @@ index 5f7f12a..4f2c5b9 100644
    class gl_cuda_vram_t: public platf::avcodec_encode_device_t {
    public:
      struct rgb_cache_entry_t {
-@@ -291,28 +337,50 @@ namespace cuda {
+@@ -291,28 +336,50 @@
       * @return 0 on success or -1 on failure.
       */
      int init(int in_width, int in_height, int offset_x, int offset_y) {
@@ -323,262 +284,10 @@ index 5f7f12a..4f2c5b9 100644
        file = std::move(open_drm_fd_for_cuda_device(cuda_device_index));
        if (file.el < 0) {
          char string[1024];
-@@ -416,7 +484,8 @@ namespace cuda {
- 
-         if (descriptor.dmabuf_buffer_key != 0) {
-           for (auto &entry : rgb_cache) {
--            if (entry.buffer_key == descriptor.dmabuf_buffer_key && entry.rgb.el.xrgb8 != EGL_NO_IMAGE) {
-+            // tex[0] valid for both EGL import and mmap fallback (xrgb8 may be null).
-+            if (entry.buffer_key == descriptor.dmabuf_buffer_key && entry.rgb->tex[0] != 0) {
-               active_rgb = &entry.rgb;
-               break;
-             }
-@@ -424,16 +493,66 @@ namespace cuda {
-         }
- 
-         if (!active_rgb) {
--          auto rgb_opt = egl::import_source(display.get(), descriptor.sd);
--          if (!rgb_opt) {
--            return -1;
-+          const auto &sd = descriptor.sd;
-+          bool filled = false;
-+
-+          // EGL zero-copy (TexStorageEXT / LINEAR retry in import_source).
-+          if (dmabuf_path != dmabuf_path_e::mmap_cpu && !egl_import_disabled) {
-+            auto rgb_opt = egl::import_source(display.get(), sd);
-+            if (rgb_opt) {
-+              if (dmabuf_path != dmabuf_path_e::egl_ok) {
-+                BOOST_LOG(info) << "CUDA DMABUF: EGL import OK"sv;
-+              }
-+              dmabuf_path = dmabuf_path_e::egl_ok;
-+              auto &entry = rgb_cache[rgb_cache_slot];
-+              entry.buffer_key = descriptor.dmabuf_buffer_key;
-+              entry.rgb = std::move(*rgb_opt);
-+              active_rgb = &entry.rgb;
-+              rgb_cache_slot = (rgb_cache_slot + 1) % rgb_cache.size();
-+              filled = true;
-+            } else {
-+              egl_import_disabled = true;
-+              BOOST_LOG(warning) << "CUDA DMABUF: EGL import failed; mmap fallback for session"sv;
-+            }
-           }
- 
--          auto &entry = rgb_cache[rgb_cache_slot];
--          entry.buffer_key = descriptor.dmabuf_buffer_key;
--          entry.rgb = std::move(*rgb_opt);
--          active_rgb = &entry.rgb;
--          rgb_cache_slot = (rgb_cache_slot + 1) % rgb_cache.size();
-+          // Fallback: mmap → TexSubImage (CPU). Keeps stream alive if EGL 0x502.
-+          if (!filled &&
-+              sd.fds[0] >= 0 && sd.width > 0 && sd.height > 0 &&
-+              sd.pitches[0] >= (std::uint32_t) sd.width * 4) {
-+            const size_t map_size = static_cast<size_t>(sd.offsets[0]) +
-+              static_cast<size_t>(sd.pitches[0]) * static_cast<size_t>(sd.height);
-+            void *map = mmap(nullptr, map_size, PROT_READ, MAP_SHARED, sd.fds[0], 0);
-+            if (map != MAP_FAILED) {
-+              auto rgb = egl::create_blank(img);
-+              gl::ctx.BindTexture(GL_TEXTURE_2D, rgb->tex[0]);
-+              gl::ctx.PixelStorei(GL_UNPACK_ROW_LENGTH, sd.pitches[0] / 4);
-+              gl::ctx.TexSubImage2D(
-+                GL_TEXTURE_2D, 0, 0, 0, sd.width, sd.height,
-+                GL_BGRA, GL_UNSIGNED_BYTE,
-+                static_cast<uint8_t *>(map) + sd.offsets[0]
-+              );
-+              gl::ctx.PixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-+              gl::ctx.BindTexture(GL_TEXTURE_2D, 0);
-+              munmap(map, map_size);
-+              if (dmabuf_path != dmabuf_path_e::mmap_cpu) {
-+                BOOST_LOG(warning) << "CUDA DMABUF: CPU mmap→GL fallback "sv
-+                                   << sd.width << "x"sv << sd.height
-+                                   << " pitch="sv << sd.pitches[0];
-+                dmabuf_path = dmabuf_path_e::mmap_cpu;
-+              }
-+              auto &entry = rgb_cache[rgb_cache_slot];
-+              entry.buffer_key = descriptor.dmabuf_buffer_key;
-+              entry.rgb = std::move(rgb);
-+              active_rgb = &entry.rgb;
-+              rgb_cache_slot = (rgb_cache_slot + 1) % rgb_cache.size();
-+              filled = true;
-+            }
-+          }
-+
-+          if (!filled) {
-+            return -1;
-+          }
-         }
- 
-         active_buffer_key = descriptor.dmabuf_buffer_key;
-@@ -443,7 +562,7 @@ namespace cuda {
-           active_rgb = &blank_rgb;
-         } else {
-           for (auto &entry : rgb_cache) {
--            if (entry.buffer_key == active_buffer_key && entry.rgb.el.xrgb8 != EGL_NO_IMAGE) {
-+            if (entry.buffer_key == active_buffer_key && entry.rgb->tex[0] != 0) {
-               active_rgb = &entry.rgb;
-               break;
-             }
-@@ -519,6 +638,10 @@ namespace cuda {
-     std::array<rgb_cache_entry_t, 2> rgb_cache {};
-     std::size_t rgb_cache_slot {0};
-     std::uint64_t active_buffer_key {0};
-+    enum class dmabuf_path_e { unset, egl_ok, mmap_cpu };
-+    dmabuf_path_e dmabuf_path {dmabuf_path_e::unset};
-+    bool egl_import_disabled {false};
-+
- 
-     registered_resource_t y_res;
-     registered_resource_t uv_res;
-diff --git a/src/platform/linux/graphics.cpp b/src/platform/linux/graphics.cpp
-index 4529a58..908395c 100644
---- a/src/platform/linux/graphics.cpp
-+++ b/src/platform/linux/graphics.cpp
-@@ -27,6 +27,7 @@ extern "C" {
- #define fourcc_code(a, b, c, d) ((std::uint32_t) (a) | ((std::uint32_t) (b) << 8) | ((std::uint32_t) (c) << 16) | ((std::uint32_t) (d) << 24))
- #define fourcc_mod_code(vendor, val) ((((uint64_t) vendor) << 56) | ((val) & 0x00ffffffffffffffULL))
- #define DRM_FORMAT_MOD_INVALID fourcc_mod_code(0, ((1ULL << 56) - 1))
-+#define DRM_FORMAT_MOD_LINEAR 0ULL
- 
- #if !defined(POLARIS_SHADERS_DIR)  // for testing this needs to be defined in cmake as we don't do an install
-   #define POLARIS_SHADERS_DIR POLARIS_ASSETS_DIR "/shaders/opengl"
-@@ -570,33 +571,121 @@ namespace egl {
-     return attribs;
-   }
- 
--  std::optional<rgb_t> import_source(display_t::pointer egl_display, const surface_descriptor_t &xrgb) {
-+  // Bare texture — NVIDIA returns GL 0x502 if sampler state is set before DMA-BUF target.
-+  static gl::tex_t make_bare_tex() {
-+    gl::tex_t textures {1};
-+    gl::ctx.GenTextures(textures.size(), textures.begin());
-+    return textures;
-+  }
-+
-+  static void finish_tex_params(GLuint tex) {
-+    gl::ctx.BindTexture(GL_TEXTURE_2D, tex);
-+    gl::ctx.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-+    gl::ctx.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-+    gl::ctx.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-+    gl::ctx.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-+    gl::ctx.BindTexture(GL_TEXTURE_2D, 0);
-+  }
-+
-+  static bool gl_clear_errors() {
-+    bool bad = false;
-+    GLenum err;
-+    while ((err = gl::ctx.GetError()) != GL_NO_ERROR) {
-+      bad = true;
-+    }
-+    return !bad;
-+  }
-+
-+  std::optional<rgb_t> import_source_once(display_t::pointer egl_display, const surface_descriptor_t &xrgb, const char *tag) {
-     auto attribs = surface_descriptor_to_egl_attribs(xrgb);
-+#ifndef EGL_IMAGE_PRESERVED_KHR
-+  #define EGL_IMAGE_PRESERVED_KHR 0x30D2
-+#endif
-+    if (!attribs.empty() && attribs.back() == EGL_NONE) {
-+      attribs.pop_back();
-+      attribs.emplace_back(EGL_IMAGE_PRESERVED_KHR);
-+      attribs.emplace_back(EGL_TRUE);
-+      attribs.emplace_back(EGL_NONE);
-+    }
-+
-+    auto image = eglCreateImage(egl_display, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs.data());
-+    if (!image) {
-+      BOOST_LOG(warning) << "EGL import "sv << tag << " eglCreateImage failed egl="sv
-+                         << util::hex(eglGetError()).to_string_view()
-+                         << " "sv << xrgb.width << "x"sv << xrgb.height
-+                         << " fourcc=0x"sv << util::hex(xrgb.fourcc).to_string_view()
-+                         << " modifier=0x"sv << util::hex(xrgb.modifier).to_string_view()
-+                         << " pitch="sv << xrgb.pitches[0];
-+      return std::nullopt;
-+    }
- 
-     rgb_t rgb {
-       egl_display,
--      eglCreateImage(egl_display, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs.data()),
--      gl::tex_t::make(1)
-+      image,
-+      make_bare_tex()
-     };
- 
--    if (!rgb->xrgb8) {
--      BOOST_LOG(error) << "Couldn't import RGB Image: "sv << util::hex(eglGetError()).to_string_view();
-+    gl::ctx.BindTexture(GL_TEXTURE_2D, rgb->tex[0]);
-+    gl_clear_errors();
-+
-+    using TexStorageFn = void (*)(GLenum, void *, const int *);
-+    static TexStorageFn tex_storage = nullptr;
-+    static bool tex_storage_resolved = false;
-+    if (!tex_storage_resolved) {
-+      tex_storage = (TexStorageFn) eglGetProcAddress("glEGLImageTargetTexStorageEXT");
-+      tex_storage_resolved = true;
-+    }
- 
-+    if (tex_storage) {
-+      tex_storage(GL_TEXTURE_2D, rgb->xrgb8, nullptr);
-+    } else if (gl::ctx.EGLImageTargetTexture2DOES) {
-+      gl::ctx.EGLImageTargetTexture2DOES(GL_TEXTURE_2D, rgb->xrgb8);
-+    } else {
-+      BOOST_LOG(warning) << "EGL import "sv << tag << " no TexStorageEXT or TargetTexture2DOES"sv;
-       return std::nullopt;
-     }
--
--    gl::ctx.BindTexture(GL_TEXTURE_2D, rgb->tex[0]);
--    gl::ctx.EGLImageTargetTexture2DOES(GL_TEXTURE_2D, rgb->xrgb8);
--
-     gl::ctx.BindTexture(GL_TEXTURE_2D, 0);
--
--    if (gl_drain_errors) {
-+    if (!gl_clear_errors()) {
-+      BOOST_LOG(warning) << "EGL import "sv << tag << " target failed "
-+                         << xrgb.width << "x"sv << xrgb.height
-+                         << " fourcc=0x"sv << util::hex(xrgb.fourcc).to_string_view()
-+                         << " pitch="sv << xrgb.pitches[0];
-       return std::nullopt;
-     }
- 
-+    finish_tex_params(rgb->tex[0]);
-+    static bool logged_ok = false;
-+    if (!logged_ok) {
-+      BOOST_LOG(info) << "EGL import "sv << tag << " OK "
-+                      << xrgb.width << "x"sv << xrgb.height
-+                      << " fourcc=0x"sv << util::hex(xrgb.fourcc).to_string_view()
-+                      << " pitch="sv << xrgb.pitches[0]
-+                      << " (once)"sv;
-+      logged_ok = true;
-+    }
-     return rgb;
-   }
- 
-+  std::optional<rgb_t> import_source(display_t::pointer egl_display, const surface_descriptor_t &xrgb) {
-+    // NVIDIA+gamescope: bare tex + TexStorageEXT when available; LINEAR if as-is fails.
-+    if (auto rgb = import_source_once(egl_display, xrgb, "as-is")) {
-+      return rgb;
-+    }
-+    if (xrgb.modifier != DRM_FORMAT_MOD_LINEAR) {
-+      surface_descriptor_t lin = xrgb;
-+      lin.modifier = DRM_FORMAT_MOD_LINEAR;
-+      if (auto rgb = import_source_once(egl_display, lin, "LINEAR")) {
-+        return rgb;
-+      }
-+    }
-+    BOOST_LOG(error) << "Couldn't import RGB DMA-BUF "sv
-+                     << xrgb.width << "x"sv << xrgb.height
-+                     << " fourcc=0x"sv << util::hex(xrgb.fourcc).to_string_view()
-+                     << " modifier=0x"sv << util::hex(xrgb.modifier).to_string_view()
-+                     << " pitch="sv << xrgb.pitches[0];
-+    return std::nullopt;
-+  }
-+
-   /**
-    * @brief Create a black RGB texture of the specified image size.
-    * @param img The image to use for texture sizing.
-diff --git a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewire_capture.cpp
-new file mode 100644
-index 0000000..f34c5d7
---- /dev/null
-+++ b/src/platform/linux/pipewire_capture.cpp
-@@ -0,0 +1,1048 @@
+diff -ruN '--exclude=.git' p-base/src/platform/linux/pipewire_capture.cpp p-no14/src/platform/linux/pipewire_capture.cpp
+--- a/src/platform/linux/pipewire_capture.cpp	1970-01-01 01:00:00.000000000 +0100
++++ b/src/platform/linux/pipewire_capture.cpp	2026-07-14 03:28:51.763268575 +0200
+@@ -0,0 +1,1033 @@
 +/**
 + * @file src/platform/linux/pipewire_capture.cpp
 + * @brief PipeWire capture format, copy, and frame metadata policy.
@@ -587,7 +296,6 @@ index 0000000..f34c5d7
 +#include "src/platform/linux/pipewire_capture.h"
 +
 +#include <algorithm>
-+#include <cstdlib>
 +#include <array>
 +#include <cerrno>
 +#include <cctype>
@@ -1358,16 +1066,12 @@ index 0000000..f34c5d7
 +        return false;
 +      }
 +
-+      auto frame_mod = info.modifier;
-+      if (frame_mod == DRM_FORMAT_MOD_INVALID) {
-+        frame_mod = DRM_FORMAT_MOD_LINEAR;
-+      }
 +      dmabuf_frame_t frame {
 +        .width = info.width,
 +        .height = info.height,
 +        .spa_format = info.spa_format,
 +        .drm_fourcc = *drm_format,
-+        .modifier = frame_mod,
++        .modifier = info.modifier,
 +        .plane_count = buffer->buffer->n_datas,
 +      };
 +      if (frame.plane_count > frame.planes.size()) {
@@ -1474,41 +1178,32 @@ index 0000000..f34c5d7
 +      cap->set_terminal(wait_result_e::reinit);
 +      return;
 +    }
-+    // POLARIS_PORTAL_DMABUF=0 → MemFd/MemPtr only (experimental escape).
-+    const char *dmabuf_env = std::getenv("POLARIS_PORTAL_DMABUF");
-+    const bool force_cpu = dmabuf_env && dmabuf_env[0] == '0' && dmabuf_env[1] == '\0';
-+    const bool want_dmabuf = cap->options_.may_use_dmabuf && !force_cpu;
-+
 +    const auto has_modifier = (raw_info.flags & SPA_VIDEO_FLAG_MODIFIER) &&
 +                              raw_info.modifier != DRM_FORMAT_MOD_INVALID;
-+    // gamescope often negotiates BGRx without SPA_VIDEO_FLAG_MODIFIER; buffers are LINEAR.
-+    const auto effective_mod = has_modifier ? raw_info.modifier : DRM_FORMAT_MOD_LINEAR;
-+    const auto offered_dmabuf = want_dmabuf && std::any_of(
++    const auto offered_dmabuf = has_modifier && std::any_of(
 +      cap->options_.dmabuf_formats.begin(), cap->options_.dmabuf_formats.end(),
 +      [&](const auto &format) {
-+        return format.spa_format == raw_info.format && format.modifier == effective_mod;
++        return format.spa_format == raw_info.format && format.modifier == raw_info.modifier;
 +      });
-+    if (has_modifier && (!want_dmabuf || !offered_dmabuf)) {
++    if (has_modifier && (!cap->options_.may_use_dmabuf || !offered_dmabuf)) {
 +      BOOST_LOG(warning) << "portal: rejecting unoffered PipeWire DMA-BUF format/modifier pair"sv;
 +      cap->set_terminal(wait_result_e::reinit);
 +      return;
 +    }
-+    // When same-GPU eligible: always offer DmaBuf|MemFd|MemPtr (experimental).
-+    // Prefer LINEAR match when SPA is silent so ParamBuffers include DmaBuf.
-+    const auto dmabuf_negotiated = want_dmabuf && (offered_dmabuf || !has_modifier);
++    const auto dmabuf_negotiated = cap->options_.may_use_dmabuf && offered_dmabuf;
++    // Diag only (no behavior change): why SHM vs DMA-BUF ParamBuffers.
 +    BOOST_LOG(info) << "portal: dmabuf_negotiate"
 +                    << " may_use="sv << (cap->options_.may_use_dmabuf ? "true"sv : "false"sv)
-+                    << " force_cpu="sv << (force_cpu ? "true"sv : "false"sv)
 +                    << " has_modifier="sv << (has_modifier ? "true"sv : "false"sv)
-+                    << " modifier="sv << effective_mod
++                    << " modifier="sv << raw_info.modifier
 +                    << " spa_format="sv << raw_info.format
 +                    << " formats="sv << cap->options_.dmabuf_formats.size()
 +                    << " offered="sv << (offered_dmabuf ? "true"sv : "false"sv)
 +                    << " negotiated="sv << (dmabuf_negotiated ? "true"sv : "false"sv)
 +                    << " flags="sv << raw_info.flags;
 +    if (dmabuf_negotiated) {
-+      BOOST_LOG(info) << "portal: PipeWire DMA-BUF path enabled (effective_mod="sv
-+                      << effective_mod << ")"sv;
++      BOOST_LOG(info) << "portal: PipeWire DMA-BUF format negotiated with modifier="sv
++                      << raw_info.modifier;
 +    }
 +
 +    pw_buffer *replaced_buffer = nullptr;
@@ -1527,8 +1222,7 @@ index 0000000..f34c5d7
 +        .height = height,
 +        .stride = width * 4,
 +        .spa_format = raw_info.format,
-+        .modifier = dmabuf_negotiated ? effective_mod :
-+          (raw_info.flags & SPA_VIDEO_FLAG_MODIFIER ? raw_info.modifier : DRM_FORMAT_MOD_INVALID),
++        .modifier = raw_info.flags & SPA_VIDEO_FLAG_MODIFIER ? raw_info.modifier : DRM_FORMAT_MOD_INVALID,
 +      };
 +      cap->front_frame_.clear();
 +      cap->back_frame_.clear();
@@ -1627,11 +1321,9 @@ index 0000000..f34c5d7
 +  }
 +#endif
 +}  // namespace pipewire_capture
-diff --git a/src/platform/linux/pipewire_capture.h b/src/platform/linux/pipewire_capture.h
-new file mode 100644
-index 0000000..9bfcb18
---- /dev/null
-+++ b/src/platform/linux/pipewire_capture.h
+diff -ruN '--exclude=.git' p-base/src/platform/linux/pipewire_capture.h p-no14/src/platform/linux/pipewire_capture.h
+--- a/src/platform/linux/pipewire_capture.h	1970-01-01 01:00:00.000000000 +0100
++++ b/src/platform/linux/pipewire_capture.h	2026-07-14 03:28:51.745721071 +0200
 @@ -0,0 +1,211 @@
 +/**
 + * @file src/platform/linux/pipewire_capture.h
@@ -1844,10 +1536,9 @@ index 0000000..9bfcb18
 +  bool is_terminal_transition_for_tests(stream_state_e old_state, stream_state_e new_state);
 +#endif
 +}  // namespace pipewire_capture
-diff --git a/src/platform/linux/portal_grab.cpp b/src/platform/linux/portal_grab.cpp
-index 9a247af..b585f5a 100644
---- a/src/platform/linux/portal_grab.cpp
-+++ b/src/platform/linux/portal_grab.cpp
+diff -ruN '--exclude=.git' p-base/src/platform/linux/portal_grab.cpp p-no14/src/platform/linux/portal_grab.cpp
+--- a/src/platform/linux/portal_grab.cpp	2026-07-14 03:28:50.923910278 +0200
++++ b/src/platform/linux/portal_grab.cpp	2026-07-14 03:28:51.763227698 +0200
 @@ -7,6 +7,7 @@
   * for the Polaris cage-as-window architecture.
   */
@@ -1896,7 +1587,7 @@ index 9a247af..b585f5a 100644
  
  #ifdef POLARIS_BUILD_CUDA
    #include "src/platform/linux/cuda.h"
-@@ -137,11 +139,18 @@ namespace portal {
+@@ -137,11 +139,18 @@
      GDBusConnection *conn = nullptr;
      std::string session_handle;
      uint32_t pw_node_id = 0;
@@ -1915,7 +1606,7 @@ index 9a247af..b585f5a 100644
        if (conn) {
          if (!session_handle.empty()) {
            g_dbus_connection_call_sync(conn,
-@@ -200,6 +209,119 @@ namespace portal {
+@@ -200,6 +209,119 @@
      return result;
    }
  
@@ -2035,7 +1726,7 @@ index 9a247af..b585f5a 100644
    // Helper: wait for a Response signal on a request path.
    // Uses a dedicated GMainLoop thread to ensure D-Bus signals are delivered.
    static GVariant *wait_for_response(GDBusConnection *conn, const std::string &request_path,
-@@ -401,7 +523,14 @@ namespace portal {
+@@ -401,7 +523,14 @@
            GVariant *props = nullptr;
            g_variant_get(stream_entry, "(u@a{sv})", &node_id, &props);
            session->pw_node_id = node_id;
@@ -2051,7 +1742,7 @@ index 9a247af..b585f5a 100644
            if (props) g_variant_unref(props);
            g_variant_unref(stream_entry);
            break;
-@@ -422,6 +551,11 @@ namespace portal {
+@@ -422,6 +551,11 @@
        g_variant_unref(resp);
  
        if (session->pw_node_id > 0) {
@@ -2063,11 +1754,10 @@ index 9a247af..b585f5a 100644
          session->ready = true;
        }
      }
-@@ -429,168 +563,6 @@ namespace portal {
-     return session;
+@@ -430,168 +564,6 @@
    }
  
--  // -----------------------------------------------------------------------
+   // -----------------------------------------------------------------------
 -  // PipeWire frame capture
 -  // -----------------------------------------------------------------------
 -
@@ -2229,10 +1919,11 @@ index 9a247af..b585f5a 100644
 -    return cap;
 -  }
 -
-   // -----------------------------------------------------------------------
+-  // -----------------------------------------------------------------------
    // Direct wlr-screencopy capture from cage (no portal, no picker)
    // Self-contained Wayland client that connects to cage's socket.
-@@ -923,8 +895,13 @@ namespace portal {
+   // -----------------------------------------------------------------------
+@@ -923,8 +895,13 @@
    // -----------------------------------------------------------------------
  
    static std::unique_ptr<portal_session_t> g_portal;
@@ -2247,7 +1938,7 @@ index 9a247af..b585f5a 100644
  
    static bool ensure_global_session() {
      // Create the portal D-Bus session once (shows picker on first use)
-@@ -937,39 +914,157 @@ namespace portal {
+@@ -937,39 +914,157 @@
          return false;
        }
        g_node_id = g_portal->pw_node_id;
@@ -2265,7 +1956,12 @@ index 9a247af..b585f5a 100644
 -    }
 +  static std::shared_ptr<pipewire_capture::capture_t> ensure_global_capture(int width, int height, platf::mem_type_e mem_type) {
 +    std::lock_guard lock(g_capture_mtx);
-+
+ 
+-    // PipeWire stream died or never created — need a fresh portal session
+-    // because the old PipeWire node is no longer valid after disconnect
+-    g_capture.reset();
+-    g_portal.reset();
+-    g_node_id = 0;
 +    const auto requested_adapter = config::video.adapter_name;
 +    if (g_capture && g_capture->running()) {
 +      const auto compatible = g_capture_requested_width == width &&
@@ -2275,12 +1971,7 @@ index 9a247af..b585f5a 100644
 +      if (compatible) {
 +        return g_capture;
 +      }
- 
--    // PipeWire stream died or never created — need a fresh portal session
--    // because the old PipeWire node is no longer valid after disconnect
--    g_capture.reset();
--    g_portal.reset();
--    g_node_id = 0;
++
 +      BOOST_LOG(info) << "portal: capture configuration changed; reconnecting PipeWire before encoder selection"sv;
 +      g_capture.reset();
 +
@@ -2422,7 +2113,7 @@ index 9a247af..b585f5a 100644
    }
  
    // -----------------------------------------------------------------------
-@@ -982,16 +1077,21 @@ namespace portal {
+@@ -982,16 +1077,21 @@
        g_screencopy_stop = true;
      }
  
@@ -2446,7 +2137,7 @@ index 9a247af..b585f5a 100644
        mem_type = hwdevice_type;
  
        if (!probe_only) {
-@@ -1007,14 +1107,16 @@ namespace portal {
+@@ -1007,14 +1107,16 @@
              return -1;
            }
  
@@ -2467,7 +2158,7 @@ index 9a247af..b585f5a 100644
            }
          } else {
            BOOST_LOG(info) << "portal: Cage/labwc active — skipping portal, will use direct screencopy"sv;
-@@ -1076,35 +1178,44 @@ namespace portal {
+@@ -1076,35 +1178,44 @@
          return platf::capture_e::reinit;
        }
  
@@ -2529,7 +2220,7 @@ index 9a247af..b585f5a 100644
          }
  
          std::shared_ptr<platf::img_t> img_out;
-@@ -1112,22 +1223,34 @@ namespace portal {
+@@ -1112,22 +1223,34 @@
            return platf::capture_e::interrupted;
          }
  
@@ -2578,7 +2269,7 @@ index 9a247af..b585f5a 100644
  
          if (!push_captured_image_cb(std::move(img_out), true)) {
            return platf::capture_e::ok;
-@@ -1139,13 +1262,23 @@ namespace portal {
+@@ -1139,13 +1262,26 @@
  
      std::shared_ptr<platf::img_t>
      alloc_img() override {
@@ -2598,13 +2289,16 @@ index 9a247af..b585f5a 100644
 +      img->dmabuf_buffer_key = 0;
 +      img->sd = {};
 +      std::fill_n(img->sd.fds, 4, -1);
-+      // Always keep a CPU buffer: if producer falls back to MemFd, fill_frame can still copy.
-+      img->buffer.assign(static_cast<std::size_t>(cfg_height) * static_cast<std::size_t>(img->row_pitch), 0);
-+      img->data = pipewire_dmabuf_negotiated ? nullptr : img->buffer.data();
++      if (pipewire_dmabuf_negotiated) {
++        img->data = nullptr;
++      } else {
++        img->buffer.assign(static_cast<std::size_t>(cfg_height) * static_cast<std::size_t>(img->row_pitch), 0);
++        img->data = img->buffer.data();
++      }
  
        BOOST_LOG(info) << "portal: alloc_img "sv << img->width << "x"sv << img->height
                        << " env="sv << this->env_width << "x"sv << this->env_height;
-@@ -1154,7 +1287,19 @@ namespace portal {
+@@ -1154,7 +1290,19 @@
  
      int
      dummy_img(platf::img_t *img) override {
@@ -2625,7 +2319,7 @@ index 9a247af..b585f5a 100644
        std::memset(img->data, 0, img->height * img->row_pitch);
        return 0;
      }
-@@ -1166,16 +1311,25 @@ namespace portal {
+@@ -1166,16 +1314,25 @@
  
  #ifdef POLARIS_BUILD_VAAPI
        if (mem_type == platf::mem_type_e::vaapi) {
@@ -2655,7 +2349,7 @@ index 9a247af..b585f5a 100644
        }
  #endif
        return std::make_unique<platf::avcodec_encode_device_t>();
-@@ -1189,9 +1343,9 @@ namespace platf {
+@@ -1189,9 +1346,9 @@
    std::shared_ptr<display_t>
    portal_display(mem_type_e hwdevice_type, const std::string &display_name, const video::config_t &config) {
      auto disp = std::make_shared<portal::portal_display_t>();
@@ -2668,11 +2362,10 @@ index 9a247af..b585f5a 100644
      if (disp->init(hwdevice_type, display_name, config)) {
        return nullptr;
      }
-diff --git a/src/video.cpp b/src/video.cpp
-index e9e9e78..780b549 100644
---- a/src/video.cpp
-+++ b/src/video.cpp
-@@ -1974,6 +1974,12 @@ namespace video {
+diff -ruN '--exclude=.git' p-base/src/video.cpp p-no14/src/video.cpp
+--- a/src/video.cpp	2026-07-14 03:28:50.925766035 +0200
++++ b/src/video.cpp	2026-07-14 03:28:51.745729216 +0200
+@@ -1974,6 +1974,12 @@
    };
  
    static encoder_t *chosen_encoder;
@@ -2685,7 +2378,7 @@ index e9e9e78..780b549 100644
    int active_hevc_mode;
    int active_av1_mode;
    bool last_encoder_probe_supported_ref_frames_invalidation = false;
-@@ -3346,6 +3352,17 @@ namespace video {
+@@ -3346,6 +3352,17 @@
  
      if (dynamic_cast<const encoder_platform_formats_avcodec *>(encoder.platform_formats.get())) {
        result = disp.make_avcodec_encode_device(*pix_fmt);
@@ -2703,7 +2396,7 @@ index e9e9e78..780b549 100644
      } else if (dynamic_cast<const encoder_platform_formats_nvenc *>(encoder.platform_formats.get())) {
        result = disp.make_nvenc_encode_device(*pix_fmt);
      }
-@@ -3809,6 +3826,12 @@ namespace video {
+@@ -3809,6 +3826,12 @@
    }
  
    bool validate_encoder(encoder_t &encoder, bool expect_failure) {
@@ -2716,7 +2409,7 @@ index e9e9e78..780b549 100644
      const auto output_name {display_device::map_output_name(config::video.output_name)};
      std::shared_ptr<platf::display_t> disp;
  
-@@ -4422,7 +4445,18 @@ namespace video {
+@@ -4422,7 +4445,18 @@
    util::Either<avcodec_buffer_t, int> cuda_init_avcodec_hardware_input_buffer(platf::avcodec_encode_device_t *encode_device) {
      avcodec_buffer_t hw_device_buf;
  
@@ -2736,11 +2429,10 @@ index e9e9e78..780b549 100644
      if (status < 0) {
        char string[AV_ERROR_MAX_STRING_SIZE];
        BOOST_LOG(error) << "Failed to create a CUDA device: "sv << av_make_error_string(string, AV_ERROR_MAX_STRING_SIZE, status);
-diff --git a/src/video.h b/src/video.h
-index 04434ac..fc61244 100644
---- a/src/video.h
-+++ b/src/video.h
-@@ -474,6 +474,12 @@ namespace video {
+diff -ruN '--exclude=.git' p-base/src/video.h p-no14/src/video.h
+--- a/src/video.h	2026-07-14 03:28:50.925766035 +0200
++++ b/src/video.h	2026-07-14 03:28:51.745780363 +0200
+@@ -474,6 +474,12 @@
      packet_queue_t packets
    );
  
@@ -2753,11 +2445,10 @@ index 04434ac..fc61244 100644
    bool validate_encoder(encoder_t &encoder, bool expect_failure);
  
    /**
-diff --git a/tests/unit/platform/test_cuda_gl_encode_device.cpp b/tests/unit/platform/test_cuda_gl_encode_device.cpp
-index 6e58381..faa1654 100644
---- a/tests/unit/platform/test_cuda_gl_encode_device.cpp
-+++ b/tests/unit/platform/test_cuda_gl_encode_device.cpp
-@@ -20,6 +20,8 @@ TEST(CudaGlEncodeDeviceTests, CudaGlEncodeDeviceInitializesForHeadlessDmabufPath
+diff -ruN '--exclude=.git' p-base/tests/unit/platform/test_cuda_gl_encode_device.cpp p-no14/tests/unit/platform/test_cuda_gl_encode_device.cpp
+--- a/tests/unit/platform/test_cuda_gl_encode_device.cpp	2026-07-14 03:28:50.933436847 +0200
++++ b/tests/unit/platform/test_cuda_gl_encode_device.cpp	2026-07-14 03:28:51.745780363 +0200
+@@ -20,6 +20,8 @@
    ASSERT_NE(eglGetPlatformDisplay, nullptr) << "eglGetPlatformDisplay was not loaded";
    auto device = cuda::make_avcodec_gl_encode_device(1920, 1080, 0, 0);
    ASSERT_NE(device, nullptr) << "GL->CUDA encode device initialization failed";
@@ -2766,10 +2457,9 @@ index 6e58381..faa1654 100644
  }
  
  TEST(CudaGlEncodeDeviceTests, CudaGlEncodeDeviceSetFrameInitializesNv12Pipeline) {
-diff --git a/tests/unit/platform/test_portal_grab_policy.cpp b/tests/unit/platform/test_portal_grab_policy.cpp
-index 2105ece..72a5463 100644
---- a/tests/unit/platform/test_portal_grab_policy.cpp
-+++ b/tests/unit/platform/test_portal_grab_policy.cpp
+diff -ruN '--exclude=.git' p-base/tests/unit/platform/test_portal_grab_policy.cpp p-no14/tests/unit/platform/test_portal_grab_policy.cpp
+--- a/tests/unit/platform/test_portal_grab_policy.cpp	2026-07-14 03:28:50.933436847 +0200
++++ b/tests/unit/platform/test_portal_grab_policy.cpp	2026-07-14 03:28:51.745802084 +0200
 @@ -1,11 +1,23 @@
  /**
   * @file tests/unit/platform/test_portal_grab_policy.cpp
@@ -2795,7 +2485,7 @@ index 2105ece..72a5463 100644
  
  namespace portal {
    std::uint32_t capture_type_for_stream_display_for_tests(bool headless_mode, bool use_cage_compositor);
-@@ -19,3 +31,331 @@ TEST(PortalGrabPolicyTests, PrivateAndWindowedCagePathsRequestWindowSource) {
+@@ -19,3 +31,331 @@
    EXPECT_EQ(portal::capture_type_for_stream_display_for_tests(true, true), 2u);
    EXPECT_EQ(portal::capture_type_for_stream_display_for_tests(false, true), 2u);
  }
@@ -3127,6 +2817,3 @@ index 2105ece..72a5463 100644
 +  ASSERT_TRUE(resolved);
 +  EXPECT_EQ(*resolved, "/dev/dri/renderD128");
 +}
--- 
-2.54.0
-

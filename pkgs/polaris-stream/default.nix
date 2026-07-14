@@ -69,6 +69,8 @@
   cudaSupport ? config.cudaSupport,
   cudaPackages ? { },
   enableBrowserStream ? true,
+  # 0014 LINEAR DmaBuf offer + EGL/mmap — ~8ms encode on lea portal; off by default (SHM ~4.8ms).
+  enablePortalDmabufLinear ? false,
 }:
 let
   stdenv' = if cudaSupport then cudaPackages.backendStdenv else stdenv;
@@ -108,14 +110,17 @@ stdenv'.mkDerivation (finalAttrs: {
   };
 
   patches = [
-    # 01: #152 PipeWire portal + same-GPU DmaBuf + CUDA encode + xBGR_210LE prefer
+    # 01: #152 PipeWire portal + same-GPU eligibility + SHM CUDA + diag + xBGR_210LE (no 0014)
     ../../polaris/01-portal-pipewire-dmabuf.patch
     # 02: portal HDR10 metadata + polaris-hdr-force gate
     ../../polaris/02-portal-hdr-metadata.patch
     # 03: persist Web UI auth sessions across restart
     ../../polaris/03-web-ui-session-persist.patch
-    # 04: non-HDR streams stay 8-bit NV12 (portal DmaBuf was p010 for 10-bit SDR ~8ms)
+    # 04: non-HDR streams stay 8-bit NV12
     ../../polaris/04-sdr-force-8bit-encode.patch
+  ] ++ lib.optionals enablePortalDmabufLinear [
+    # 05: 0014 LINEAR DmaBuf + EGL/mmap (optional; encode ~8ms on lea — improve here)
+    ../../polaris/05-portal-dmabuf-linear-mmap.patch
   ];
 
   ui = buildNpmPackage {

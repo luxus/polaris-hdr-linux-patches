@@ -1,0 +1,371 @@
+From: patch-rebuild <patches@local>
+Subject: [PATCH] topic5: 0014 LINEAR DmaBuf offer + EGL/mmap (optional; ~8ms encode on lea)
+
+diff -ruN '--exclude=.git' p-no14/src/platform/linux/cuda.cpp p-yes14/src/platform/linux/cuda.cpp
+--- a/src/platform/linux/cuda.cpp	2026-07-14 03:28:51.763247876 +0200
++++ b/src/platform/linux/cuda.cpp	2026-07-14 03:28:51.745654265 +0200
+@@ -6,6 +6,7 @@
+ #include <array>
+ #include <bitset>
+ #include <fcntl.h>
++#include <sys/mman.h>
+ #include <filesystem>
+ #include <thread>
+ 
+@@ -483,7 +484,8 @@
+ 
+         if (descriptor.dmabuf_buffer_key != 0) {
+           for (auto &entry : rgb_cache) {
+-            if (entry.buffer_key == descriptor.dmabuf_buffer_key && entry.rgb.el.xrgb8 != EGL_NO_IMAGE) {
++            // tex[0] valid for both EGL import and mmap fallback (xrgb8 may be null).
++            if (entry.buffer_key == descriptor.dmabuf_buffer_key && entry.rgb->tex[0] != 0) {
+               active_rgb = &entry.rgb;
+               break;
+             }
+@@ -491,16 +493,66 @@
+         }
+ 
+         if (!active_rgb) {
+-          auto rgb_opt = egl::import_source(display.get(), descriptor.sd);
+-          if (!rgb_opt) {
+-            return -1;
++          const auto &sd = descriptor.sd;
++          bool filled = false;
++
++          // EGL zero-copy (TexStorageEXT / LINEAR retry in import_source).
++          if (dmabuf_path != dmabuf_path_e::mmap_cpu && !egl_import_disabled) {
++            auto rgb_opt = egl::import_source(display.get(), sd);
++            if (rgb_opt) {
++              if (dmabuf_path != dmabuf_path_e::egl_ok) {
++                BOOST_LOG(info) << "CUDA DMABUF: EGL import OK"sv;
++              }
++              dmabuf_path = dmabuf_path_e::egl_ok;
++              auto &entry = rgb_cache[rgb_cache_slot];
++              entry.buffer_key = descriptor.dmabuf_buffer_key;
++              entry.rgb = std::move(*rgb_opt);
++              active_rgb = &entry.rgb;
++              rgb_cache_slot = (rgb_cache_slot + 1) % rgb_cache.size();
++              filled = true;
++            } else {
++              egl_import_disabled = true;
++              BOOST_LOG(warning) << "CUDA DMABUF: EGL import failed; mmap fallback for session"sv;
++            }
+           }
+ 
+-          auto &entry = rgb_cache[rgb_cache_slot];
+-          entry.buffer_key = descriptor.dmabuf_buffer_key;
+-          entry.rgb = std::move(*rgb_opt);
+-          active_rgb = &entry.rgb;
+-          rgb_cache_slot = (rgb_cache_slot + 1) % rgb_cache.size();
++          // Fallback: mmap → TexSubImage (CPU). Keeps stream alive if EGL 0x502.
++          if (!filled &&
++              sd.fds[0] >= 0 && sd.width > 0 && sd.height > 0 &&
++              sd.pitches[0] >= (std::uint32_t) sd.width * 4) {
++            const size_t map_size = static_cast<size_t>(sd.offsets[0]) +
++              static_cast<size_t>(sd.pitches[0]) * static_cast<size_t>(sd.height);
++            void *map = mmap(nullptr, map_size, PROT_READ, MAP_SHARED, sd.fds[0], 0);
++            if (map != MAP_FAILED) {
++              auto rgb = egl::create_blank(img);
++              gl::ctx.BindTexture(GL_TEXTURE_2D, rgb->tex[0]);
++              gl::ctx.PixelStorei(GL_UNPACK_ROW_LENGTH, sd.pitches[0] / 4);
++              gl::ctx.TexSubImage2D(
++                GL_TEXTURE_2D, 0, 0, 0, sd.width, sd.height,
++                GL_BGRA, GL_UNSIGNED_BYTE,
++                static_cast<uint8_t *>(map) + sd.offsets[0]
++              );
++              gl::ctx.PixelStorei(GL_UNPACK_ROW_LENGTH, 0);
++              gl::ctx.BindTexture(GL_TEXTURE_2D, 0);
++              munmap(map, map_size);
++              if (dmabuf_path != dmabuf_path_e::mmap_cpu) {
++                BOOST_LOG(warning) << "CUDA DMABUF: CPU mmap→GL fallback "sv
++                                   << sd.width << "x"sv << sd.height
++                                   << " pitch="sv << sd.pitches[0];
++                dmabuf_path = dmabuf_path_e::mmap_cpu;
++              }
++              auto &entry = rgb_cache[rgb_cache_slot];
++              entry.buffer_key = descriptor.dmabuf_buffer_key;
++              entry.rgb = std::move(rgb);
++              active_rgb = &entry.rgb;
++              rgb_cache_slot = (rgb_cache_slot + 1) % rgb_cache.size();
++              filled = true;
++            }
++          }
++
++          if (!filled) {
++            return -1;
++          }
+         }
+ 
+         active_buffer_key = descriptor.dmabuf_buffer_key;
+@@ -510,7 +562,7 @@
+           active_rgb = &blank_rgb;
+         } else {
+           for (auto &entry : rgb_cache) {
+-            if (entry.buffer_key == active_buffer_key && entry.rgb.el.xrgb8 != EGL_NO_IMAGE) {
++            if (entry.buffer_key == active_buffer_key && entry.rgb->tex[0] != 0) {
+               active_rgb = &entry.rgb;
+               break;
+             }
+@@ -586,6 +638,10 @@
+     std::array<rgb_cache_entry_t, 2> rgb_cache {};
+     std::size_t rgb_cache_slot {0};
+     std::uint64_t active_buffer_key {0};
++    enum class dmabuf_path_e { unset, egl_ok, mmap_cpu };
++    dmabuf_path_e dmabuf_path {dmabuf_path_e::unset};
++    bool egl_import_disabled {false};
++
+ 
+     registered_resource_t y_res;
+     registered_resource_t uv_res;
+diff -ruN '--exclude=.git' p-no14/src/platform/linux/graphics.cpp p-yes14/src/platform/linux/graphics.cpp
+--- a/src/platform/linux/graphics.cpp	2026-07-14 03:28:51.763258677 +0200
++++ b/src/platform/linux/graphics.cpp	2026-07-14 03:28:51.745694200 +0200
+@@ -27,6 +27,7 @@
+ #define fourcc_code(a, b, c, d) ((std::uint32_t) (a) | ((std::uint32_t) (b) << 8) | ((std::uint32_t) (c) << 16) | ((std::uint32_t) (d) << 24))
+ #define fourcc_mod_code(vendor, val) ((((uint64_t) vendor) << 56) | ((val) & 0x00ffffffffffffffULL))
+ #define DRM_FORMAT_MOD_INVALID fourcc_mod_code(0, ((1ULL << 56) - 1))
++#define DRM_FORMAT_MOD_LINEAR 0ULL
+ 
+ #if !defined(POLARIS_SHADERS_DIR)  // for testing this needs to be defined in cmake as we don't do an install
+   #define POLARIS_SHADERS_DIR POLARIS_ASSETS_DIR "/shaders/opengl"
+@@ -570,33 +571,121 @@
+     return attribs;
+   }
+ 
+-  std::optional<rgb_t> import_source(display_t::pointer egl_display, const surface_descriptor_t &xrgb) {
++  // Bare texture — NVIDIA returns GL 0x502 if sampler state is set before DMA-BUF target.
++  static gl::tex_t make_bare_tex() {
++    gl::tex_t textures {1};
++    gl::ctx.GenTextures(textures.size(), textures.begin());
++    return textures;
++  }
++
++  static void finish_tex_params(GLuint tex) {
++    gl::ctx.BindTexture(GL_TEXTURE_2D, tex);
++    gl::ctx.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++    gl::ctx.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++    gl::ctx.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
++    gl::ctx.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
++    gl::ctx.BindTexture(GL_TEXTURE_2D, 0);
++  }
++
++  static bool gl_clear_errors() {
++    bool bad = false;
++    GLenum err;
++    while ((err = gl::ctx.GetError()) != GL_NO_ERROR) {
++      bad = true;
++    }
++    return !bad;
++  }
++
++  std::optional<rgb_t> import_source_once(display_t::pointer egl_display, const surface_descriptor_t &xrgb, const char *tag) {
+     auto attribs = surface_descriptor_to_egl_attribs(xrgb);
++#ifndef EGL_IMAGE_PRESERVED_KHR
++  #define EGL_IMAGE_PRESERVED_KHR 0x30D2
++#endif
++    if (!attribs.empty() && attribs.back() == EGL_NONE) {
++      attribs.pop_back();
++      attribs.emplace_back(EGL_IMAGE_PRESERVED_KHR);
++      attribs.emplace_back(EGL_TRUE);
++      attribs.emplace_back(EGL_NONE);
++    }
++
++    auto image = eglCreateImage(egl_display, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs.data());
++    if (!image) {
++      BOOST_LOG(warning) << "EGL import "sv << tag << " eglCreateImage failed egl="sv
++                         << util::hex(eglGetError()).to_string_view()
++                         << " "sv << xrgb.width << "x"sv << xrgb.height
++                         << " fourcc=0x"sv << util::hex(xrgb.fourcc).to_string_view()
++                         << " modifier=0x"sv << util::hex(xrgb.modifier).to_string_view()
++                         << " pitch="sv << xrgb.pitches[0];
++      return std::nullopt;
++    }
+ 
+     rgb_t rgb {
+       egl_display,
+-      eglCreateImage(egl_display, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs.data()),
+-      gl::tex_t::make(1)
++      image,
++      make_bare_tex()
+     };
+ 
+-    if (!rgb->xrgb8) {
+-      BOOST_LOG(error) << "Couldn't import RGB Image: "sv << util::hex(eglGetError()).to_string_view();
++    gl::ctx.BindTexture(GL_TEXTURE_2D, rgb->tex[0]);
++    gl_clear_errors();
+ 
+-      return std::nullopt;
++    using TexStorageFn = void (*)(GLenum, void *, const int *);
++    static TexStorageFn tex_storage = nullptr;
++    static bool tex_storage_resolved = false;
++    if (!tex_storage_resolved) {
++      tex_storage = (TexStorageFn) eglGetProcAddress("glEGLImageTargetTexStorageEXT");
++      tex_storage_resolved = true;
+     }
+ 
+-    gl::ctx.BindTexture(GL_TEXTURE_2D, rgb->tex[0]);
+-    gl::ctx.EGLImageTargetTexture2DOES(GL_TEXTURE_2D, rgb->xrgb8);
+-
++    if (tex_storage) {
++      tex_storage(GL_TEXTURE_2D, rgb->xrgb8, nullptr);
++    } else if (gl::ctx.EGLImageTargetTexture2DOES) {
++      gl::ctx.EGLImageTargetTexture2DOES(GL_TEXTURE_2D, rgb->xrgb8);
++    } else {
++      BOOST_LOG(warning) << "EGL import "sv << tag << " no TexStorageEXT or TargetTexture2DOES"sv;
++      return std::nullopt;
++    }
+     gl::ctx.BindTexture(GL_TEXTURE_2D, 0);
+-
+-    if (gl_drain_errors) {
++    if (!gl_clear_errors()) {
++      BOOST_LOG(warning) << "EGL import "sv << tag << " target failed "
++                         << xrgb.width << "x"sv << xrgb.height
++                         << " fourcc=0x"sv << util::hex(xrgb.fourcc).to_string_view()
++                         << " pitch="sv << xrgb.pitches[0];
+       return std::nullopt;
+     }
+ 
++    finish_tex_params(rgb->tex[0]);
++    static bool logged_ok = false;
++    if (!logged_ok) {
++      BOOST_LOG(info) << "EGL import "sv << tag << " OK "
++                      << xrgb.width << "x"sv << xrgb.height
++                      << " fourcc=0x"sv << util::hex(xrgb.fourcc).to_string_view()
++                      << " pitch="sv << xrgb.pitches[0]
++                      << " (once)"sv;
++      logged_ok = true;
++    }
+     return rgb;
+   }
+ 
++  std::optional<rgb_t> import_source(display_t::pointer egl_display, const surface_descriptor_t &xrgb) {
++    // NVIDIA+gamescope: bare tex + TexStorageEXT when available; LINEAR if as-is fails.
++    if (auto rgb = import_source_once(egl_display, xrgb, "as-is")) {
++      return rgb;
++    }
++    if (xrgb.modifier != DRM_FORMAT_MOD_LINEAR) {
++      surface_descriptor_t lin = xrgb;
++      lin.modifier = DRM_FORMAT_MOD_LINEAR;
++      if (auto rgb = import_source_once(egl_display, lin, "LINEAR")) {
++        return rgb;
++      }
++    }
++    BOOST_LOG(error) << "Couldn't import RGB DMA-BUF "sv
++                     << xrgb.width << "x"sv << xrgb.height
++                     << " fourcc=0x"sv << util::hex(xrgb.fourcc).to_string_view()
++                     << " modifier=0x"sv << util::hex(xrgb.modifier).to_string_view()
++                     << " pitch="sv << xrgb.pitches[0];
++    return std::nullopt;
++  }
++
+   /**
+    * @brief Create a black RGB texture of the specified image size.
+    * @param img The image to use for texture sizing.
+diff -ruN '--exclude=.git' p-no14/src/platform/linux/pipewire_capture.cpp p-yes14/src/platform/linux/pipewire_capture.cpp
+--- a/src/platform/linux/pipewire_capture.cpp	2026-07-14 03:28:51.763268575 +0200
++++ b/src/platform/linux/pipewire_capture.cpp	2026-07-14 03:28:51.745705842 +0200
+@@ -6,6 +6,7 @@
+ #include "src/platform/linux/pipewire_capture.h"
+ 
+ #include <algorithm>
++#include <cstdlib>
+ #include <array>
+ #include <cerrno>
+ #include <cctype>
+@@ -776,12 +777,16 @@
+         return false;
+       }
+ 
++      auto frame_mod = info.modifier;
++      if (frame_mod == DRM_FORMAT_MOD_INVALID) {
++        frame_mod = DRM_FORMAT_MOD_LINEAR;
++      }
+       dmabuf_frame_t frame {
+         .width = info.width,
+         .height = info.height,
+         .spa_format = info.spa_format,
+         .drm_fourcc = *drm_format,
+-        .modifier = info.modifier,
++        .modifier = frame_mod,
+         .plane_count = buffer->buffer->n_datas,
+       };
+       if (frame.plane_count > frame.planes.size()) {
+@@ -888,32 +893,41 @@
+       cap->set_terminal(wait_result_e::reinit);
+       return;
+     }
++    // POLARIS_PORTAL_DMABUF=0 → MemFd/MemPtr only (experimental escape).
++    const char *dmabuf_env = std::getenv("POLARIS_PORTAL_DMABUF");
++    const bool force_cpu = dmabuf_env && dmabuf_env[0] == '0' && dmabuf_env[1] == '\0';
++    const bool want_dmabuf = cap->options_.may_use_dmabuf && !force_cpu;
++
+     const auto has_modifier = (raw_info.flags & SPA_VIDEO_FLAG_MODIFIER) &&
+                               raw_info.modifier != DRM_FORMAT_MOD_INVALID;
+-    const auto offered_dmabuf = has_modifier && std::any_of(
++    // gamescope often negotiates BGRx without SPA_VIDEO_FLAG_MODIFIER; buffers are LINEAR.
++    const auto effective_mod = has_modifier ? raw_info.modifier : DRM_FORMAT_MOD_LINEAR;
++    const auto offered_dmabuf = want_dmabuf && std::any_of(
+       cap->options_.dmabuf_formats.begin(), cap->options_.dmabuf_formats.end(),
+       [&](const auto &format) {
+-        return format.spa_format == raw_info.format && format.modifier == raw_info.modifier;
++        return format.spa_format == raw_info.format && format.modifier == effective_mod;
+       });
+-    if (has_modifier && (!cap->options_.may_use_dmabuf || !offered_dmabuf)) {
++    if (has_modifier && (!want_dmabuf || !offered_dmabuf)) {
+       BOOST_LOG(warning) << "portal: rejecting unoffered PipeWire DMA-BUF format/modifier pair"sv;
+       cap->set_terminal(wait_result_e::reinit);
+       return;
+     }
+-    const auto dmabuf_negotiated = cap->options_.may_use_dmabuf && offered_dmabuf;
+-    // Diag only (no behavior change): why SHM vs DMA-BUF ParamBuffers.
++    // When same-GPU eligible: always offer DmaBuf|MemFd|MemPtr (experimental).
++    // Prefer LINEAR match when SPA is silent so ParamBuffers include DmaBuf.
++    const auto dmabuf_negotiated = want_dmabuf && (offered_dmabuf || !has_modifier);
+     BOOST_LOG(info) << "portal: dmabuf_negotiate"
+                     << " may_use="sv << (cap->options_.may_use_dmabuf ? "true"sv : "false"sv)
++                    << " force_cpu="sv << (force_cpu ? "true"sv : "false"sv)
+                     << " has_modifier="sv << (has_modifier ? "true"sv : "false"sv)
+-                    << " modifier="sv << raw_info.modifier
++                    << " modifier="sv << effective_mod
+                     << " spa_format="sv << raw_info.format
+                     << " formats="sv << cap->options_.dmabuf_formats.size()
+                     << " offered="sv << (offered_dmabuf ? "true"sv : "false"sv)
+                     << " negotiated="sv << (dmabuf_negotiated ? "true"sv : "false"sv)
+                     << " flags="sv << raw_info.flags;
+     if (dmabuf_negotiated) {
+-      BOOST_LOG(info) << "portal: PipeWire DMA-BUF format negotiated with modifier="sv
+-                      << raw_info.modifier;
++      BOOST_LOG(info) << "portal: PipeWire DMA-BUF path enabled (effective_mod="sv
++                      << effective_mod << ")"sv;
+     }
+ 
+     pw_buffer *replaced_buffer = nullptr;
+@@ -932,7 +946,8 @@
+         .height = height,
+         .stride = width * 4,
+         .spa_format = raw_info.format,
+-        .modifier = raw_info.flags & SPA_VIDEO_FLAG_MODIFIER ? raw_info.modifier : DRM_FORMAT_MOD_INVALID,
++        .modifier = dmabuf_negotiated ? effective_mod :
++          (raw_info.flags & SPA_VIDEO_FLAG_MODIFIER ? raw_info.modifier : DRM_FORMAT_MOD_INVALID),
+       };
+       cap->front_frame_.clear();
+       cap->back_frame_.clear();
+diff -ruN '--exclude=.git' p-no14/src/platform/linux/portal_grab.cpp p-yes14/src/platform/linux/portal_grab.cpp
+--- a/src/platform/linux/portal_grab.cpp	2026-07-14 03:28:51.763227698 +0200
++++ b/src/platform/linux/portal_grab.cpp	2026-07-14 03:28:51.745729216 +0200
+@@ -1276,12 +1276,9 @@
+       img->dmabuf_buffer_key = 0;
+       img->sd = {};
+       std::fill_n(img->sd.fds, 4, -1);
+-      if (pipewire_dmabuf_negotiated) {
+-        img->data = nullptr;
+-      } else {
+-        img->buffer.assign(static_cast<std::size_t>(cfg_height) * static_cast<std::size_t>(img->row_pitch), 0);
+-        img->data = img->buffer.data();
+-      }
++      // Always keep a CPU buffer: if producer falls back to MemFd, fill_frame can still copy.
++      img->buffer.assign(static_cast<std::size_t>(cfg_height) * static_cast<std::size_t>(img->row_pitch), 0);
++      img->data = pipewire_dmabuf_negotiated ? nullptr : img->buffer.data();
+ 
+       BOOST_LOG(info) << "portal: alloc_img "sv << img->width << "x"sv << img->height
+                       << " env="sv << this->env_width << "x"sv << this->env_height;

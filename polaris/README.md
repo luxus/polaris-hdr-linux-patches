@@ -11,25 +11,32 @@ Failed experiments: [`archived/polaris/experimental/`](../archived/polaris/exper
 
 | Patch | Topic | What it does |
 |-------|--------|----------------|
-| `01-portal-pipewire-dmabuf.patch` | Capture / encode | Upstream #152 PipeWire portal capture + same-GPU DmaBuf eligibility (`adapter_name` assume), SHM→CUDA NV12 fallback, negotiate diag, LINEAR mmap/EGL DmaBuf path, prefer gamescope **xBGR_210LE** over BGRx |
+| `01-portal-pipewire-dmabuf.patch` | Capture / encode | Upstream #152 PipeWire portal capture + same-GPU DmaBuf **eligibility** (`adapter_name` assume), SHM→CUDA NV12, negotiate **diag** (requires SPA modifier to use DmaBuf), prefer gamescope **xBGR_210LE** over BGRx. **Does not** force LINEAR DmaBuf when SPA omits modifiers. |
 | `02-portal-hdr-metadata.patch` | HDR | Portal reports usable HDR10 mastering metadata; gate `is_hdr` on `$XDG_RUNTIME_DIR/polaris-hdr-force` (client HDR) |
 | `03-web-ui-session-persist.patch` | Web UI | Persist auth sessions across polaris restart (cookie alone is not enough) |
-| `04-sdr-force-8bit-encode.patch` | Encode | Non-HDR streams force 8-bit NV12 even when client requests 10-bit SDR (avoids portal DmaBuf **p010** ~8ms encode) |
+| `04-sdr-force-8bit-encode.patch` | Encode | Non-HDR streams force 8-bit NV12 even when client requests 10-bit SDR |
+| `05-portal-dmabuf-linear-mmap.patch` | **Optional** DmaBuf | Former **0014**: offer DmaBuf without SPA modifier (treat as LINEAR), TexStorageEXT + LINEAR retry, mmap→GL fallback (`sys/mman.h`). On lea portal this raised encode **~4.8ms → ~8.8ms**. Off by default. |
 
 ```bash
-# on clean master @ 2008458
+# default (good encode / SHM-class on gamescope without SPA modifiers)
 git apply polaris/01-portal-pipewire-dmabuf.patch
 git apply polaris/02-portal-hdr-metadata.patch
 git apply polaris/03-web-ui-session-persist.patch
 git apply polaris/04-sdr-force-8bit-encode.patch
+
+# optional: re-enable 0014 LINEAR path for experimentation
+git apply polaris/05-portal-dmabuf-linear-mmap.patch
 ```
+
+Nix: `enablePortalDmabufLinear = true` on `polaris-stream` (default `false`).
 
 ## Not applied (archived)
 
 | Path | Why |
 |------|-----|
-| `archived/.../0009-portal-dmabuf-gl-import.patch` | NVIDIA black video; superseded by 01’s LINEAR/mmap + EGL path |
-| `archived/polaris/experimental/*` | Early gist DmaBuf attempts; do not stack with 01 |
+| `archived/.../0009-portal-dmabuf-gl-import.patch` | NVIDIA black video |
+| `archived/.../0014-…` | Superseded by optional `05` (same logic, topic form) |
+| `archived/polaris/experimental/*` | Early gist DmaBuf attempts; do not stack with 01/05 |
 
 ## Host notes (not in these patches)
 
