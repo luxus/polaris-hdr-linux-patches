@@ -13,7 +13,7 @@ index 02e184f..b5ce4a4 100644
              "${CMAKE_SOURCE_DIR}/src/platform/linux/cuda.h"
              "${CMAKE_SOURCE_DIR}/src/platform/linux/cuda.cu"
 diff --git a/src/platform/linux/cuda.cpp b/src/platform/linux/cuda.cpp
-index 82384af..fbce6fc 100644
+index 82384af..80afe13 100644
 --- a/src/platform/linux/cuda.cpp
 +++ b/src/platform/linux/cuda.cpp
 @@ -5,13 +5,20 @@
@@ -53,7 +53,7 @@ index 82384af..fbce6fc 100644
  
    void pass_error(const std::string_view &sv, const char *name, const char *description) {
      BOOST_LOG(error) << sv << name << ':' << description;
-@@ -593,6 +602,843 @@ namespace cuda {
+@@ -593,6 +602,871 @@ namespace cuda {
      int offset_x, offset_y;
    };
  
@@ -133,12 +133,40 @@ index 82384af..fbce6fc 100644
 +    }
 +
 +    int set_frame(AVFrame *frame, AVBufferRef *hw_frames_ctx_buf) override {
-+      if (cuda_t::set_frame(frame, hw_frames_ctx_buf)) {
++      // Accept NV12 (SDR) and P010 (HDR 10-bit). Base cuda_t only allows NV12.
++      this->hwframe.reset(frame);
++      this->frame = frame;
++
++      auto *hwframe_ctx = (AVHWFramesContext *) hw_frames_ctx_buf->data;
++      if (hwframe_ctx->sw_format != AV_PIX_FMT_NV12 && hwframe_ctx->sw_format != AV_PIX_FMT_P010) {
++        BOOST_LOG(error) << "CUDA DMABUF: unsupported sw_format (need NV12 or P010), got "sv
++                         << hwframe_ctx->sw_format;
 +        return -1;
 +      }
-+      auto *frames_ctx = (AVHWFramesContext *) hw_frames_ctx_buf->data;
-+      auto *device_ctx = (AVCUDADeviceContext *) frames_ctx->device_ctx->hwctx;
++
++      if (!frame->buf[0]) {
++        if (av_hwframe_get_buffer(hw_frames_ctx_buf, frame, 0)) {
++          BOOST_LOG(error) << "CUDA DMABUF: Couldn't get hwframe for NVENC"sv;
++          return -1;
++        }
++      }
++
++      auto *device_ctx = (AVCUDADeviceContext *) hwframe_ctx->device_ctx->hwctx;
 +      cu_ctx = device_ctx->cuda_ctx;
++
++      stream = make_stream();
++      if (!stream) {
++        return -1;
++      }
++      device_ctx->stream = stream.get();
++
++      auto sws_opt = sws_t::make(width, height, frame->width, frame->height, width * 4);
++      if (!sws_opt) {
++        return -1;
++      }
++      sws = std::move(*sws_opt);
++      linear_interpolation = width != frame->width || height != frame->height;
++
 +      staging_tex = tex_t::make(height, width * 4);
 +      if (!staging_tex) {
 +        return -1;
@@ -897,7 +925,7 @@ index 82384af..fbce6fc 100644
    std::unique_ptr<platf::avcodec_encode_device_t> make_avcodec_encode_device(int width, int height, bool vram) {
      if (init()) {
        return nullptr;
-@@ -635,6 +1481,22 @@ namespace cuda {
+@@ -635,6 +1509,22 @@ namespace cuda {
      return cuda;
    }
  
