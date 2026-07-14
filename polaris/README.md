@@ -1,17 +1,16 @@
 # Polaris patches (topic series)
 
-Applied by `pkgs/polaris-stream` onto **papi-ux/polaris** master
-`2008458634c0d3f04f8abc39fab862bc69a47af8`.
-
-## Apply order
-
 | Patch | Default | What |
 |-------|---------|------|
-| `01`–`04` | always | portal SHM CUDA, HDR, web sessions, force-8bit |
-| `05-portal-dmabuf-linear-mmap.patch` | **on** (`enablePortalDmabufLinear`) | LINEAR DmaBuf negotiate + `cuImportExternalMemory` encode. **No mmap fallback.** No mmap fallback. If `cuImportExternalMemory` fails → no video (not silent mmap). |
+| `01`–`04` | always | portal base, HDR, web, force-8bit |
+| `05` | **on** | LINEAR DmaBuf negotiate + **EGL→GL→CUDA** encode (Sunshine-style). **No** `cuImportExternalMemory`, **no** mmap fallback. |
 
-## Lea notes
+## Why not CUDA extmem?
 
-- SHM (05 off): video OK, encode low.
-- 05 on + import fail: no video (by design — no mmap fallback).
-- Next experiment: CUDA-EGL (`cudaGraphicsEGLRegisterImage`), not mmap.
+gamescope LINEAR DmaBufs on NVIDIA fail `cuImportExternalMemory` (`CUDA_ERROR_UNKNOWN`).
+Project archive note: *gamescope dmabufs reject CUDA extmem*. Sunshine uses EGL import + GL convert + CUDA map instead.
+
+## Reporting
+
+WebUI `gpu_native` = **capture** DmaBuf residency, not convert path.
+Convert is EGL→GL→CUDA (GPU textures, not zero-copy into NVENC).
