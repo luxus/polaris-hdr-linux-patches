@@ -69,8 +69,8 @@
   cudaSupport ? config.cudaSupport,
   cudaPackages ? { },
   enableBrowserStream ? true,
-  # 0014 LINEAR DmaBuf offer + EGL/mmap — ~8ms encode on lea portal; off by default (SHM ~4.8ms).
-  enablePortalDmabufLinear ? false,
+  # Portal LINEAR DmaBuf + CUDA import encode. Default on for testing the CUDA path.
+  enablePortalDmabufLinear ? true,
 }:
 let
   stdenv' = if cudaSupport then cudaPackages.backendStdenv else stdenv;
@@ -119,7 +119,7 @@ stdenv'.mkDerivation (finalAttrs: {
     # 04: non-HDR streams stay 8-bit NV12
     ../../polaris/04-sdr-force-8bit-encode.patch
   ] ++ lib.optionals enablePortalDmabufLinear [
-    # 05: 0014 LINEAR DmaBuf + EGL/mmap (optional; encode ~8ms on lea — improve here)
+    # 05: LINEAR DmaBuf negotiate + CUDA cuImportExternalMemory encode path
     ../../polaris/05-portal-dmabuf-linear-mmap.patch
   ];
 

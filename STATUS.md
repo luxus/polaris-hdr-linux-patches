@@ -2,7 +2,8 @@
 
 | Date | State |
 |------|--------|
-| 2026-07-14 | **0014 split out**: optional `polaris/05` (`enablePortalDmabufLinear`); default ~4.8ms SHM-class; 0014 was ~8.8ms encode on lea |
+| 2026-07-14 | **0014 split out**: optional `polaris/05` |
+| 2026-07-14 | **05 = CUDA import**: `cuImportExternalMemory` + pitch2D + RGBA_to_NV12 (not GL); default on for lea A/B |
 | 2026-07-13 | **Patch cleanup**: topic series under `polaris/` + `gamescope/`; old `0001`…`0015` + experimental → `archived/` |
 | 2026-07-13 | **HDR OK on lea**: no ENABLE_*_WSI; XWayland + prefer xBGR_210LE + portal HDR |
 | 2026-07-13 | **DmaBuf green**: `capture_transport=dmabuf`, EGL import OK, p010 encode |

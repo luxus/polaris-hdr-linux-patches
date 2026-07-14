@@ -3,43 +3,26 @@
 Applied by `pkgs/polaris-stream` onto **papi-ux/polaris** master
 `2008458634c0d3f04f8abc39fab862bc69a47af8`.
 
-Historical numbered series (`0001`…`0015`, `combined.patch`) lives under
-[`archived/polaris/issue-152-series/`](../archived/polaris/issue-152-series/).
-Failed experiments: [`archived/polaris/experimental/`](../archived/polaris/experimental/).
-
 ## Apply order
 
 | Patch | Topic | What it does |
 |-------|--------|----------------|
-| `01-portal-pipewire-dmabuf.patch` | Capture / encode | Upstream #152 PipeWire portal capture + same-GPU DmaBuf **eligibility** (`adapter_name` assume), SHM→CUDA NV12, negotiate **diag** (requires SPA modifier to use DmaBuf), prefer gamescope **xBGR_210LE** over BGRx. **Does not** force LINEAR DmaBuf when SPA omits modifiers. |
-| `02-portal-hdr-metadata.patch` | HDR | Portal reports usable HDR10 mastering metadata; gate `is_hdr` on `$XDG_RUNTIME_DIR/polaris-hdr-force` (client HDR) |
-| `03-web-ui-session-persist.patch` | Web UI | Persist auth sessions across polaris restart (cookie alone is not enough) |
-| `04-sdr-force-8bit-encode.patch` | Encode | Non-HDR streams force 8-bit NV12 even when client requests 10-bit SDR |
-| `05-portal-dmabuf-linear-mmap.patch` | **Optional** DmaBuf | Former **0014**: offer DmaBuf without SPA modifier (treat as LINEAR), TexStorageEXT + LINEAR retry, mmap→GL fallback (`sys/mman.h`). On lea portal this raised encode **~4.8ms → ~8.8ms**. Off by default. |
+| `01-portal-pipewire-dmabuf.patch` | Capture | #152 portal + SHM CUDA + diag + xBGR_210LE (no forced LINEAR DmaBuf) |
+| `02-portal-hdr-metadata.patch` | HDR | HDR10 metadata + polaris-hdr-force gate |
+| `03-web-ui-session-persist.patch` | Web UI | Persist auth sessions |
+| `04-sdr-force-8bit-encode.patch` | Encode | Non-HDR streams force 8-bit NV12 |
+| `05-portal-dmabuf-linear-mmap.patch` | DmaBuf CUDA | Negotiate LINEAR DmaBuf without SPA modifiers; **CUDA** `cuImportExternalMemory` + pitch2D + `RGBA_to_NV12` (not GL). Toggle: `enablePortalDmabufLinear` |
 
 ```bash
-# default (good encode / SHM-class on gamescope without SPA modifiers)
 git apply polaris/01-portal-pipewire-dmabuf.patch
 git apply polaris/02-portal-hdr-metadata.patch
 git apply polaris/03-web-ui-session-persist.patch
 git apply polaris/04-sdr-force-8bit-encode.patch
-
-# optional: re-enable 0014 LINEAR path for experimentation
-git apply polaris/05-portal-dmabuf-linear-mmap.patch
+git apply polaris/05-portal-dmabuf-linear-mmap.patch   # optional / default on in flake
 ```
 
-Nix: `enablePortalDmabufLinear = true` on `polaris-stream` (default `false`).
+## Notes
 
-## Not applied (archived)
-
-| Path | Why |
-|------|-----|
-| `archived/.../0009-portal-dmabuf-gl-import.patch` | NVIDIA black video |
-| `archived/.../0014-…` | Superseded by optional `05` (same logic, topic form) |
-| `archived/polaris/experimental/*` | Early gist DmaBuf attempts; do not stack with 01/05 |
-
-## Host notes (not in these patches)
-
-- `adapter_name = /dev/dri/renderD128` (or your NVIDIA render node) for same-GPU DmaBuf
-- Gamescope idle + `xdg-desktop-portal-gamescope` + `capture = portal` (luxusAi `polaris-hdr-session`)
-- Do **not** set `ENABLE_GAMESCOPE_WSI` / `ENABLE_HDR_WSI` under Proton (washes present path)
+- Without 05: SHM `cuda_ram_t` ~4.8ms encode on lea 4K.
+- Old 05 (GL EGL + mmap): ~8.8ms.
+- Current 05: CUDA import path — measure encode on lea.
