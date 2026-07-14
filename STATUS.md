@@ -2,7 +2,8 @@
 
 | Date | State |
 |------|--------|
-| 2026-07-14 | **05 runtime green on lea**: `convert_path=vulkan_cuda` 4K60 portal gamescope; livingroom **HDR Rec.2020+PQ** stable frames; no Error/Warn; not on mmap |
+| 2026-07-14 | **HDR color OK** (user): close #1; remaining optional path = **WSI nested** (not attach/color) |
+| 2026-07-14 | **05 runtime green on lea**: `convert_path=vulkan_cuda` 4K60 portal gamescope; livingroom **HDR Rec.2020+PQ** stable frames + good color; not on mmap |
 | 2026-07-14 | **05 renamed**: `05-portal-dmabuf-vulkan-cuda.patch` (was `…-linear-mmap` — mmap is sticky fallback only) |
 | 2026-07-14 | **05 = portal-only Vulkan bridge**: LINEAR DMA-BUF → GPU copy → exportable OPAQUE_FD → CUDA map; loud sticky `mmap_cuda` fallback |
 | 2026-07-14 | **0014 split out**: optional `polaris/05` |
@@ -33,11 +34,11 @@ See [polaris/README.md](polaris/README.md), [gamescope/README.md](gamescope/READ
 
 | # | Topic |
 |---|--------|
-| [#1](https://github.com/luxus/polaris-hdr-linux-patches/issues/1) | HDR color / real HDR vs SDR (HDMI parity — still open) |
 | [#3](https://github.com/luxus/polaris-hdr-linux-patches/issues/3) | Web UI preview + path/mode clarity |
 | [#4](https://github.com/luxus/polaris-hdr-linux-patches/issues/4) | Stream mode: Gamescope Stream peer of Private Stream |
+| [#6](https://github.com/luxus/polaris-hdr-linux-patches/issues/6) | Gamescope **WSI nested** path (attach path is known-good; low priority) |
 
-**Closed (2026-07-14):** [#2](https://github.com/luxus/polaris-hdr-linux-patches/issues/2) native DMA-BUF · [#5](https://github.com/luxus/polaris-hdr-linux-patches/issues/5) Vulkan→CUDA encode path
+**Closed (2026-07-14):** [#1](https://github.com/luxus/polaris-hdr-linux-patches/issues/1) HDR color · [#2](https://github.com/luxus/polaris-hdr-linux-patches/issues/2) DMA-BUF · [#5](https://github.com/luxus/polaris-hdr-linux-patches/issues/5) Vulkan→CUDA
 
 ## Verified on lea
 
@@ -61,4 +62,4 @@ See [polaris/README.md](polaris/README.md), [gamescope/README.md](gamescope/READ
 | Forced SDR Bigscreen app | `POLARIS_CLIENT_HDR=false` override path |
 | Split encode `auto` | often mode=0 at 4K60; encode headroom fine |
 
-**Still open:** HDMI-like color (#1); Gamescope Stream as first-class UI mode (#4); dual labwc/gamescope switch product; optional #5 cleanup (strip dead experiment code if any remains, WebUI convert_path surface via #3).
+**Still open:** Gamescope Stream UI mode (#4); WebUI path clarity (#3); optional WSI nested (#6). Attach path + color + encode stack are good on lea.
