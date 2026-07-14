@@ -1,0 +1,17 @@
+--- a/src/steamcompmgr.cpp	1970-01-01 01:00:01.000000000 +0100
++++ b/src/steamcompmgr.cpp	2026-07-14 21:56:52.774700853 +0200
+@@ -2324,11 +2324,11 @@
+ 	frameInfo.allowVRR             = false;
+ 	frameInfo.bFadingOut           = false;
+ 
+-	// Apply screenshot-style color management.
++	// Experiment A (IceDOS): display color LUTs on PipeWire capture path.
+ 	for ( uint32_t nInputEOTF = 0; nInputEOTF < EOTF_Count; nInputEOTF++ )
+ 	{
+-		frameInfo.lut3D[nInputEOTF]     = g_ScreenshotColorMgmtLuts[nInputEOTF].vk_lut3d;
+-		frameInfo.shaperLut[nInputEOTF] = g_ScreenshotColorMgmtLuts[nInputEOTF].vk_lut1d;
++		frameInfo.lut3D[nInputEOTF]     = g_ColorMgmtLuts[nInputEOTF].vk_lut3d;
++		frameInfo.shaperLut[nInputEOTF] = g_ColorMgmtLuts[nInputEOTF].vk_lut1d;
+ 	}
+ 
+ 	const uint64_t ulFocusAppId = s_pPipewireBuffer->gamescope_info.focus_appid;

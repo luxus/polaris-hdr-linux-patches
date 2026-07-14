@@ -2,10 +2,10 @@
 # (https://github.com/papi-ux/polaris/issues/152). Opt-in for HDR headless sessions.
 # enableWsi: build VkLayer_FROG_gamescope_wsi (ENABLE_GAMESCOPE_WSI / ENABLE_HDR_WSI).
 #
-# Color experiment (2026-07-13): do NOT force PQ paint / ColorMgmt LUTs on the
-# PipeWire path. Stock paint_pipewire uses screenshot LUTs + EOTF_Gamma22.
-# IceDOS had the opposite (PQ + LUTs) for Sunshine; with Polaris, game-HDR wash
-# looked worse — try letting gamescope's default capture color path stand.
+# Color experiment ladder (one step at a time):
+#   A (04): paint_pipewire uses g_ColorMgmtLuts (this package)
+#   B (later): postPatch outputEncodingEOTF=PQ when HDR + nits/gamut pin
+# Stock was screenshot LUTs + EOTF_Gamma22.
 { gamescope }:
 
 (gamescope.override { enableWsi = true; }).overrideAttrs (old: {
@@ -16,11 +16,13 @@
     ../../gamescope/02-headless-hdr-colorimetry.patch
     # Prefer SPA_DATA_DmaBuf when the consumer allows it (GameStream zero-copy).
     ../../gamescope/03-pipewire-prefer-dmabuf.patch
+    # A: IceDOS color-mgmt LUTs on PipeWire path (not EOTF_PQ yet).
+    ../../gamescope/04-pipewire-color-mgmt.patch
   ];
 
   meta = old.meta // {
     description = "${
       old.meta.description or "gamescope"
-    } (HDR PW metadata + WSI; stock paint_pipewire color)";
+    } (HDR PW metadata + WSI; ColorMgmt LUTs on paint_pipewire)";
   };
 })
