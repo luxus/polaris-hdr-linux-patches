@@ -13,10 +13,10 @@ index 02e184f..b5ce4a4 100644
              "${CMAKE_SOURCE_DIR}/src/platform/linux/cuda.h"
              "${CMAKE_SOURCE_DIR}/src/platform/linux/cuda.cu"
 diff --git a/src/platform/linux/cuda.cpp b/src/platform/linux/cuda.cpp
-index 82384af..53994de 100644
+index 82384af..fbce6fc 100644
 --- a/src/platform/linux/cuda.cpp
 +++ b/src/platform/linux/cuda.cpp
-@@ -5,13 +5,19 @@
+@@ -5,13 +5,20 @@
  // standard includes
  #include <array>
  #include <bitset>
@@ -24,6 +24,7 @@ index 82384af..53994de 100644
  #include <fcntl.h>
  #include <filesystem>
 +#include <limits>
++#include <iomanip>
 +#include <sys/mman.h>
  #include <thread>
 +#include <unistd.h>
@@ -36,7 +37,7 @@ index 82384af..53994de 100644
  
  extern "C" {
  #include <libavcodec/avcodec.h>
-@@ -24,6 +30,7 @@ extern "C" {
+@@ -24,6 +31,7 @@ extern "C" {
  #include "graphics.h"
  #include "src/config.h"
  #include "src/logging.h"
@@ -44,7 +45,7 @@ index 82384af..53994de 100644
  #include "src/utility.h"
  #include "src/video.h"
  #include "wayland.h"
-@@ -45,6 +52,7 @@ using namespace std::literals;
+@@ -45,6 +53,7 @@ using namespace std::literals;
  namespace cuda {
    constexpr auto cudaDevAttrMaxThreadsPerBlock = (CUdevice_attribute) 1;
    constexpr auto cudaDevAttrMaxThreadsPerMultiProcessor = (CUdevice_attribute) 39;
@@ -52,7 +53,7 @@ index 82384af..53994de 100644
  
    void pass_error(const std::string_view &sv, const char *name, const char *description) {
      BOOST_LOG(error) << sv << name << ':' << description;
-@@ -593,6 +601,825 @@ namespace cuda {
+@@ -593,6 +602,843 @@ namespace cuda {
      int offset_x, offset_y;
    };
  
@@ -202,8 +203,10 @@ index 82384af..53994de 100644
 +    }
 +
 +    std::optional<layout_t> layout(const egl::surface_descriptor_t &sd) const {
++      // 8-bit BGRx/BGRA and 10-bit XBGR2101010 are all single-plane 32bpp LINEAR.
 +      if (sd.fds[0] < 0 || sd.fds[1] >= 0 || sd.fds[2] >= 0 || sd.fds[3] >= 0 ||
-+          (sd.fourcc != DRM_FORMAT_XRGB8888 && sd.fourcc != DRM_FORMAT_ARGB8888) ||
++          (sd.fourcc != DRM_FORMAT_XRGB8888 && sd.fourcc != DRM_FORMAT_ARGB8888 &&
++           sd.fourcc != DRM_FORMAT_XBGR2101010) ||
 +          sd.width <= 0 || sd.height <= 0 || sd.width != width || sd.height != height ||
 +          sd.modifier != DRM_FORMAT_MOD_LINEAR || (sd.offsets[0] & 3) || (sd.pitches[0] & 3)) {
 +        return std::nullopt;
@@ -587,7 +590,8 @@ index 82384af..53994de 100644
 +        width,
 +        height,
 +        destination_pitch,
-+        linear_interpolation
++        linear_interpolation,
++        source_fourcc == DRM_FORMAT_XBGR2101010
 +      );
 +      if (!texture) {
 +        return false;
@@ -716,7 +720,15 @@ index 82384af..53994de 100644
 +
 +    int vulkan_and_convert(egl::img_descriptor_t &descriptor) {
 +      const auto frame_layout = layout(descriptor.sd);
-+      if (!frame_layout || !device || !ensure_destination(*frame_layout)) {
++      if (!frame_layout) {
++        return -1;
++      }
++      // Recreate destination texture when packed format changes (8-bit vs 10-bit).
++      if (source_fourcc && source_fourcc != descriptor.sd.fourcc) {
++        release_cuda_destination();
++      }
++      source_fourcc = descriptor.sd.fourcc;
++      if (!device || !ensure_destination(*frame_layout)) {
 +        return -1;
 +      }
 +      auto *source = source_for(descriptor, *frame_layout);
@@ -764,19 +776,25 @@ index 82384af..53994de 100644
 +          !vk_call(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX), "vkWaitForFences"sv)) {
 +        return -1;
 +      }
++      const bool dst_p010 = frame && (frame->format == AV_PIX_FMT_P010);
++      const bool src_xb30 = descriptor.sd.fourcc == DRM_FORMAT_XBGR2101010;
 +      const int result = sws.convert(frame->data[0], frame->data[1], frame->linesize[0], frame->linesize[1],
-+        destination_texture, stream.get());
++        destination_texture, stream.get(), dst_p010, src_xb30);
 +      if (result) {
 +        return result;
 +      }
++      const auto fmt = (descriptor.sd.fourcc == DRM_FORMAT_XBGR2101010) ?
++        platf::frame_format_e::p010 : platf::frame_format_e::bgra8;
 +      stream_stats::update_encode_path_metadata(
 +        "vulkan_cuda",
 +        platf::frame_residency_e::gpu,
-+        platf::frame_format_e::bgra8
++        fmt
 +      );
 +      if (!vulkan_logged) {
 +        BOOST_LOG(info) << "CUDA DMABUF: convert_path=vulkan_cuda "sv << width << 'x' << height
-+                        << " pitch="sv << destination_pitch << " source imports cached; destination mapping persistent"sv;
++                        << " pitch="sv << destination_pitch
++                        << " fourcc=0x"sv << std::hex << descriptor.sd.fourcc << std::dec
++                        << " source imports cached; destination mapping persistent"sv;
 +        vulkan_logged = true;
 +      }
 +      return 0;
@@ -873,12 +891,13 @@ index 82384af..53994de 100644
 +    CUexternalMemory destination_external_memory {nullptr};
 +    CUdeviceptr destination_device_ptr {0};
 +    cudaTextureObject_t destination_texture {0};
++    std::uint32_t source_fourcc {0};
 +  };
 +
    std::unique_ptr<platf::avcodec_encode_device_t> make_avcodec_encode_device(int width, int height, bool vram) {
      if (init()) {
        return nullptr;
-@@ -635,6 +1462,19 @@ namespace cuda {
+@@ -635,6 +1481,22 @@ namespace cuda {
      return cuda;
    }
  
@@ -891,7 +910,10 @@ index 82384af..53994de 100644
 +    if (device->init(width, height)) {
 +      return nullptr;
 +    }
-+    device->prefer_8bit_encode = true;
++    // Prefer true 10-bit GPU frames when capture is xBGR_210LE + HDR client.
++    // Patch 04 still forces NV12 for non-HDR streams (even if client asks 10-bit SDR).
++    // convert() writes P010 when frame is AV_PIX_FMT_P010*, else NV12 from BGRx.
++    device->prefer_8bit_encode = false;
 +    return device;
 +  }
 +
@@ -899,14 +921,90 @@ index 82384af..53994de 100644
      static PNVFBCCREATEINSTANCE createInstance {};
      static NVFBC_API_FUNCTION_LIST func {NVFBC_VERSION};
 diff --git a/src/platform/linux/cuda.cu b/src/platform/linux/cuda.cu
-index a0c0e11..7a5b659 100644
+index a0c0e11..b4c03d6 100644
 --- a/src/platform/linux/cuda.cu
 +++ b/src/platform/linux/cuda.cu
-@@ -206,6 +206,36 @@ namespace cuda {
+@@ -206,6 +206,116 @@ namespace cuda {
      dstY1[1] = calcY(rgb_rb, color_matrix) * 245.0f;  // 245.0f is a magic number to ensure slight changes in luminosity are more visible
    }
  
-+  std::optional<cudaTextureObject_t> make_pitch2d_texture(void *dev_ptr, int width, int height, std::size_t pitch_bytes, bool linear_filter) {
++
++  // DRM_FORMAT_XBGR2101010: [31:0] = X:B:G:R 2:10:10:10 little-endian.
++  inline __device__ float3 xbgr2101010_to_rgb(unsigned int p) {
++    const float r = float(p & 0x3ffu) * (1.0f / 1023.0f);
++    const float g = float((p >> 10) & 0x3ffu) * (1.0f / 1023.0f);
++    const float b = float((p >> 20) & 0x3ffu) * (1.0f / 1023.0f);
++    return make_float3(r, g, b);
++  }
++
++  // Sample either normalized BGRA float4 (8-bit) or packed XB30 uint.
++  template<bool XB30>
++  inline __device__ float3 sample_rgb(cudaTextureObject_t srcImage, float x, float y) {
++    if constexpr (XB30) {
++      return xbgr2101010_to_rgb(tex2D<unsigned int>(srcImage, x, y));
++    } else {
++      return bgra_to_rgb(tex2D<float4>(srcImage, x, y));
++    }
++  }
++
++  // RGB -> P010LE (10-bit left-aligned in uint16). Y full res, UV 4:2:0 interleaved.
++  template<bool XB30>
++  __global__ void RGBA_to_P010(
++    cudaTextureObject_t srcImage,
++    std::uint16_t *dstY,
++    std::uint16_t *dstUV,
++    std::uint32_t dstPitchY,  // bytes
++    std::uint32_t dstPitchUV, // bytes
++    float scale,
++    const viewport_t viewport,
++    const cuda_color_t *const color_matrix
++  ) {
++    int idX = (threadIdx.x + blockDim.x * blockIdx.x) * 2;
++    int idY = (threadIdx.y + blockDim.y * blockIdx.y) * 2;
++
++    if (idX >= viewport.width || idY >= viewport.height) {
++      return;
++    }
++
++    float x = idX * scale;
++    float y = idY * scale;
++
++    idX += viewport.offsetX;
++    idY += viewport.offsetY;
++
++    auto *dstY0 = reinterpret_cast<std::uint16_t *>(reinterpret_cast<std::uint8_t *>(dstY) + idY * dstPitchY) + idX;
++    auto *dstY1 = reinterpret_cast<std::uint16_t *>(reinterpret_cast<std::uint8_t *>(dstY) + (idY + 1) * dstPitchY) + idX;
++    auto *dstUV_row = reinterpret_cast<std::uint16_t *>(reinterpret_cast<std::uint8_t *>(dstUV) + (idY / 2) * dstPitchUV) + idX;
++
++    float3 rgb_lt = sample_rgb<XB30>(srcImage, x, y);
++    float3 rgb_rt = sample_rgb<XB30>(srcImage, x + scale, y);
++    float3 rgb_lb = sample_rgb<XB30>(srcImage, x, y + scale);
++    float3 rgb_rb = sample_rgb<XB30>(srcImage, x + scale, y + scale);
++
++    float2 uv_lt = calcUV(rgb_lt, color_matrix);
++    float2 uv_rt = calcUV(rgb_rt, color_matrix);
++    float2 uv_lb = calcUV(rgb_lb, color_matrix);
++    float2 uv_rb = calcUV(rgb_rb, color_matrix);
++    float2 uv = (uv_lt + uv_lb + uv_rt + uv_rb) * 0.25f;
++
++    auto to_p010 = [](float v) -> std::uint16_t {
++      // left-aligned 10-bit in 16-bit word (FFmpeg P010LE)
++      int q = int(v * 1023.0f + 0.5f);
++      if (q < 0) q = 0;
++      if (q > 1023) q = 1023;
++      return std::uint16_t(q << 6);
++    };
++
++    // Match 8-bit path's slight Y scale (245/255) for continuity.
++    dstY0[0] = to_p010(calcY(rgb_lt, color_matrix) * (245.0f / 255.0f));
++    dstY0[1] = to_p010(calcY(rgb_rt, color_matrix) * (245.0f / 255.0f));
++    dstY1[0] = to_p010(calcY(rgb_lb, color_matrix) * (245.0f / 255.0f));
++    dstY1[1] = to_p010(calcY(rgb_rb, color_matrix) * (245.0f / 255.0f));
++    dstUV_row[0] = to_p010(uv.x);
++    dstUV_row[1] = to_p010(uv.y);
++  }
++
++  std::optional<cudaTextureObject_t> make_pitch2d_texture(void *dev_ptr, int width, int height, std::size_t pitch_bytes, bool linear_filter, bool xbgr2101010) {
 +    if (!dev_ptr || width <= 0 || height <= 0 || pitch_bytes < static_cast<std::size_t>(width) * 4) {
 +      return std::nullopt;
 +    }
@@ -914,14 +1012,18 @@ index a0c0e11..7a5b659 100644
 +    cudaResourceDesc res {};
 +    res.resType = cudaResourceTypePitch2D;
 +    res.res.pitch2D.devPtr = dev_ptr;
-+    res.res.pitch2D.desc = cudaCreateChannelDesc<uchar4>();
++    // XB30 is 32-bit packed 10bpc; sample as unsigned 32 and unpack in kernel.
++    // 8-bit BGRA uses uchar4 + normalized float (existing RGBA_to_NV12 path).
++    res.res.pitch2D.desc = xbgr2101010 ? cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindUnsigned) :
++                                         cudaCreateChannelDesc<uchar4>();
 +    res.res.pitch2D.width = static_cast<std::size_t>(width);
 +    res.res.pitch2D.height = static_cast<std::size_t>(height);
 +    res.res.pitch2D.pitchInBytes = pitch_bytes;
 +
 +    cudaTextureDesc desc {};
-+    desc.readMode = cudaReadModeNormalizedFloat;
-+    desc.filterMode = linear_filter ? cudaFilterModeLinear : cudaFilterModePoint;
++    desc.readMode = xbgr2101010 ? cudaReadModeElementType : cudaReadModeNormalizedFloat;
++    // Linear filter is invalid for non-normalized element-type 32-bit textures.
++    desc.filterMode = (xbgr2101010 || !linear_filter) ? cudaFilterModePoint : cudaFilterModeLinear;
 +    desc.normalizedCoords = false;
 +    std::fill_n(std::begin(desc.addressMode), 2, cudaAddressModeClamp);
 +
@@ -939,8 +1041,47 @@ index a0c0e11..7a5b659 100644
    int tex_t::copy(std::uint8_t *src, int height, int pitch) {
      CU_CHECK(cudaMemcpy2DToArray(array, 0, 0, src, pitch, pitch, height, cudaMemcpyDeviceToDevice), "Couldn't copy to cuda array from deviceptr");
  
+@@ -314,17 +424,35 @@ namespace cuda {
+     return std::make_optional<sws_t>(in_width, in_height, out_width, out_height, pitch, props.maxThreadsPerMultiProcessor / props.maxBlocksPerMultiProcessor, std::move(ptr));
+   }
+ 
+-  int sws_t::convert(std::uint8_t *Y, std::uint8_t *UV, std::uint32_t pitchY, std::uint32_t pitchUV, cudaTextureObject_t texture, stream_t::pointer stream) {
+-    return convert(Y, UV, pitchY, pitchUV, texture, stream, viewport);
++  int sws_t::convert(std::uint8_t *Y, std::uint8_t *UV, std::uint32_t pitchY, std::uint32_t pitchUV, cudaTextureObject_t texture, stream_t::pointer stream, bool dst_p010, bool src_xb30) {
++    return convert(Y, UV, pitchY, pitchUV, texture, stream, viewport, dst_p010, src_xb30);
+   }
+ 
+-  int sws_t::convert(std::uint8_t *Y, std::uint8_t *UV, std::uint32_t pitchY, std::uint32_t pitchUV, cudaTextureObject_t texture, stream_t::pointer stream, const viewport_t &viewport) {
++  int sws_t::convert(std::uint8_t *Y, std::uint8_t *UV, std::uint32_t pitchY, std::uint32_t pitchUV, cudaTextureObject_t texture, stream_t::pointer stream, const viewport_t &viewport, bool dst_p010, bool src_xb30) {
+     int threadsX = viewport.width / 2;
+     int threadsY = viewport.height / 2;
+ 
+     dim3 block(threadsPerBlock);
+     dim3 grid(div_align(threadsX, threadsPerBlock), threadsY);
+ 
++    if (dst_p010) {
++      if (src_xb30) {
++        RGBA_to_P010<true><<<grid, block, 0, stream>>>(
++          texture,
++          reinterpret_cast<std::uint16_t *>(Y),
++          reinterpret_cast<std::uint16_t *>(UV),
++          pitchY, pitchUV, scale, viewport, (cuda_color_t *) color_matrix.get());
++      } else {
++        RGBA_to_P010<false><<<grid, block, 0, stream>>>(
++          texture,
++          reinterpret_cast<std::uint16_t *>(Y),
++          reinterpret_cast<std::uint16_t *>(UV),
++          pitchY, pitchUV, scale, viewport, (cuda_color_t *) color_matrix.get());
++      }
++      return CU_CHECK_IGNORE(cudaGetLastError(), "RGBA_to_P010 failed");
++    }
++
++    // NV12 path expects normalized float4 BGRA texture (8-bit).
+     RGBA_to_NV12<<<grid, block, 0, stream>>>(texture, Y, UV, pitchY, pitchUV, scale, viewport, (cuda_color_t *) color_matrix.get());
+ 
+     return CU_CHECK_IGNORE(cudaGetLastError(), "RGBA_to_NV12 failed");
 diff --git a/src/platform/linux/cuda.h b/src/platform/linux/cuda.h
-index cb77e41..fd51c51 100644
+index cb77e41..ca31528 100644
 --- a/src/platform/linux/cuda.h
 +++ b/src/platform/linux/cuda.h
 @@ -6,6 +6,7 @@
@@ -964,12 +1105,23 @@ index cb77e41..fd51c51 100644
      } texture;
    };
  
-+  std::optional<cudaTextureObject_t> make_pitch2d_texture(void *dev_ptr, int width, int height, std::size_t pitch_bytes, bool linear_filter);
++  std::optional<cudaTextureObject_t> make_pitch2d_texture(void *dev_ptr, int width, int height, std::size_t pitch_bytes, bool linear_filter, bool xbgr2101010 = false);
 +  void destroy_texture(cudaTextureObject_t tex);
 +
    class sws_t {
    public:
      sws_t() = default;
+@@ -108,8 +114,8 @@ namespace cuda {
+     static std::optional<sws_t> make(int in_width, int in_height, int out_width, int out_height, int pitch);
+ 
+     // Converts loaded image into a CUDevicePtr
+-    int convert(std::uint8_t *Y, std::uint8_t *UV, std::uint32_t pitchY, std::uint32_t pitchUV, cudaTextureObject_t texture, stream_t::pointer stream);
+-    int convert(std::uint8_t *Y, std::uint8_t *UV, std::uint32_t pitchY, std::uint32_t pitchUV, cudaTextureObject_t texture, stream_t::pointer stream, const viewport_t &viewport);
++    int convert(std::uint8_t *Y, std::uint8_t *UV, std::uint32_t pitchY, std::uint32_t pitchUV, cudaTextureObject_t texture, stream_t::pointer stream, bool dst_p010 = false, bool src_xb30 = false);
++    int convert(std::uint8_t *Y, std::uint8_t *UV, std::uint32_t pitchY, std::uint32_t pitchUV, cudaTextureObject_t texture, stream_t::pointer stream, const viewport_t &viewport, bool dst_p010 = false, bool src_xb30 = false);
+ 
+     void apply_colorspace(const video::sunshine_colorspace_t &colorspace);
+ 
 diff --git a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewire_capture.cpp
 index 441a26d..76e1fd9 100644
 --- a/src/platform/linux/pipewire_capture.cpp
@@ -1055,10 +1207,10 @@ index 441a26d..76e1fd9 100644
        cap->front_frame_.clear();
        cap->back_frame_.clear();
 diff --git a/src/platform/linux/portal_grab.cpp b/src/platform/linux/portal_grab.cpp
-index a03308e..b98acba 100644
+index a03308e..fedc911 100644
 --- a/src/platform/linux/portal_grab.cpp
 +++ b/src/platform/linux/portal_grab.cpp
-@@ -984,28 +984,35 @@ namespace portal {
+@@ -984,19 +984,30 @@ namespace portal {
      } else if (mem_type != platf::mem_type_e::vaapi && mem_type != platf::mem_type_e::cuda) {
        BOOST_LOG(info) << "portal: DMA-BUF disabled because encoder memory type is not VAAPI or CUDA"sv;
      } else {
@@ -1069,9 +1221,13 @@ index a03308e..b98acba 100644
 -          if (std::find(format.external_only_modifiers.begin(), format.external_only_modifiers.end(), modifier) == format.external_only_modifiers.end()) {
 -            importable_modifiers.push_back(modifier);
 +      if (mem_type == platf::mem_type_e::cuda) {
++        // LINEAR one-plane packed RGB: 8-bit BGRx/BGRA + 10-bit xBGR_210LE (HDR).
++        // Keep vulkan_cuda fast path; do not drop XB30 (regression vs prefer-10-bit).
 +        dmabuf_formats = pipewire_capture::task1_packed_dmabuf_formats({DRM_FORMAT_MOD_LINEAR});
 +        std::erase_if(dmabuf_formats, [](const auto &format) {
-+          return format.spa_format != SPA_VIDEO_FORMAT_BGRx && format.spa_format != SPA_VIDEO_FORMAT_BGRA;
++          return format.spa_format != SPA_VIDEO_FORMAT_BGRx &&
++                 format.spa_format != SPA_VIDEO_FORMAT_BGRA &&
++                 format.spa_format != SPA_VIDEO_FORMAT_xBGR_210LE;
 +        });
 +      } else {
 +        const auto egl_formats = pipewire_capture::query_egl_dmabuf_import_formats(*encoder_render_node);
@@ -1083,37 +1239,19 @@ index a03308e..b98acba 100644
 +            }
            }
          }
--      }
++        const auto portal_formats = pipewire_capture::task1_packed_dmabuf_formats(std::move(importable_modifiers));
++        dmabuf_formats = pipewire_capture::filter_importable_dmabuf_formats(portal_formats, egl_formats);
+       }
 -      const auto portal_formats = pipewire_capture::task1_packed_dmabuf_formats(std::move(importable_modifiers));
 -      dmabuf_formats = pipewire_capture::filter_importable_dmabuf_formats(portal_formats, egl_formats);
 -      // gamescope HDR offers xBGR_210LE LINEAR; EGL query may omit XB30 even when
 -      // import_source works (same LINEAR path as BGRx). Always offer LINEAR 10-bit.
--      const bool has_xb30_linear = std::any_of(dmabuf_formats.begin(), dmabuf_formats.end(), [](const auto &f) {
--        return f.spa_format == SPA_VIDEO_FORMAT_xBGR_210LE && f.modifier == DRM_FORMAT_MOD_LINEAR;
--      });
--      if (!has_xb30_linear) {
--        dmabuf_formats.insert(dmabuf_formats.begin(), {
--          .spa_format = SPA_VIDEO_FORMAT_xBGR_210LE,
--          .drm_fourcc = DRM_FORMAT_XBGR2101010,
--          .modifier = DRM_FORMAT_MOD_LINEAR,
-+        const auto portal_formats = pipewire_capture::task1_packed_dmabuf_formats(std::move(importable_modifiers));
-+        dmabuf_formats = pipewire_capture::filter_importable_dmabuf_formats(portal_formats, egl_formats);
-+        // gamescope HDR offers xBGR_210LE LINEAR; EGL query may omit XB30 even when
-+        // import_source works (same LINEAR path as BGRx). Always offer LINEAR 10-bit.
-+        const bool has_xb30_linear = std::any_of(dmabuf_formats.begin(), dmabuf_formats.end(), [](const auto &f) {
-+          return f.spa_format == SPA_VIDEO_FORMAT_xBGR_210LE && f.modifier == DRM_FORMAT_MOD_LINEAR;
-         });
-+        if (!has_xb30_linear) {
-+          dmabuf_formats.insert(dmabuf_formats.begin(), {
-+            .spa_format = SPA_VIDEO_FORMAT_xBGR_210LE,
-+            .drm_fourcc = DRM_FORMAT_XBGR2101010,
-+            .modifier = DRM_FORMAT_MOD_LINEAR,
-+          });
-+        }
-       }
-       const pipewire_capture::dmabuf_eligibility_t eligibility {
-         .capture_render_node = g_portal->capture_render_node,
-@@ -1015,7 +1022,7 @@ namespace portal {
++      // gamescope HDR offers xBGR_210LE LINEAR; EGL/list filters may omit it.
++      // Always ensure LINEAR 10-bit is offered so force-HDR can negotiate spa 81.
+       const bool has_xb30_linear = std::any_of(dmabuf_formats.begin(), dmabuf_formats.end(), [](const auto &f) {
+         return f.spa_format == SPA_VIDEO_FORMAT_xBGR_210LE && f.modifier == DRM_FORMAT_MOD_LINEAR;
+       });
+@@ -1015,7 +1026,7 @@ namespace portal {
        };
        may_use_dmabuf = pipewire_capture::may_offer_dmabuf(eligibility);
        if (!may_use_dmabuf) {
@@ -1122,7 +1260,7 @@ index a03308e..b98acba 100644
                          << *encoder_render_node << ']';
        }
      }
-@@ -1315,12 +1322,8 @@ namespace portal {
+@@ -1315,12 +1326,8 @@ namespace portal {
        img->dmabuf_buffer_key = 0;
        img->sd = {};
        std::fill_n(img->sd.fds, 4, -1);
@@ -1137,7 +1275,7 @@ index a03308e..b98acba 100644
  
        BOOST_LOG(info) << "portal: alloc_img "sv << img->width << "x"sv << img->height
                        << " env="sv << this->env_width << "x"sv << this->env_height;
-@@ -1362,11 +1365,9 @@ namespace portal {
+@@ -1362,11 +1369,9 @@ namespace portal {
  #ifdef POLARIS_BUILD_CUDA
        if (mem_type == platf::mem_type_e::cuda) {
          if (pipewire_dmabuf_negotiated) {

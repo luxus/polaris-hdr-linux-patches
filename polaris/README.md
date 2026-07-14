@@ -3,7 +3,7 @@
 | Patch | Default | What |
 |-------|---------|------|
 | `01`–`04` | always | portal base, HDR, web, force-8bit |
-| `05` (`05-portal-dmabuf-vulkan-cuda.patch`) | **on** | LINEAR one-plane BGRx/BGRA DmaBuf → **Vulkan buffer copy** → CUDA/NVENC; failure sticks to loud `mmap_cuda` with CPU-residency stats |
+| `05` (`05-portal-dmabuf-vulkan-cuda.patch`) | **on** | LINEAR one-plane **BGRx/BGRA** (SDR) and **xBGR_210LE / XB30** (HDR) DmaBuf → **Vulkan buffer copy** → CUDA/NVENC (`vulkan_cuda`); HDR → P010, SDR → NV12; failure sticks to loud `mmap_cuda` |
 
 ## Convert paths
 
