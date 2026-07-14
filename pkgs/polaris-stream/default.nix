@@ -119,7 +119,7 @@ stdenv'.mkDerivation (finalAttrs: {
     # 04: non-HDR streams stay 8-bit NV12
     ../../polaris/04-sdr-force-8bit-encode.patch
   ] ++ lib.optionals enablePortalDmabufLinear [
-    # 05: LINEAR DmaBuf + cuImportExternalMemory only (no GL, no mmap)
+    # 05: LINEAR DmaBuf + CUDA import; loud mmap_cuda fallback + stats
     ../../polaris/05-portal-dmabuf-linear-mmap.patch
   ];
 

@@ -1,12 +1,16 @@
-# Polaris patches (topic series)
+# Polaris patches
 
 | Patch | Default | What |
 |-------|---------|------|
 | `01`–`04` | always | portal base, HDR, web, force-8bit |
-| `05` | **on** | LINEAR DmaBuf + **CUDA import only** (`cuImportExternalMemory`). **No GL convert. No mmap fallback.** |
+| `05` | **on** | LINEAR DmaBuf + CUDA import; if import fails → **ERROR** `convert_path=mmap_cuda` + stats `encode_target_residency=cpu` (WebUI not gpu_native) |
 
-## Status (lea)
+## Convert paths
 
-- `cuImportExternalMemory` currently fails (`CUDA_ERROR_UNKNOWN`) on gamescope LINEAR DmaBuf.
-- Without fallback → no video until import is fixed (CUDA-EGL image register without GL shaders, or extmem flags).
-- Do **not** reintroduce EGL→GL→CUDA as the goal path; goal is get rid of GL.
+| convert_path | Meaning |
+|--------------|---------|
+| `cuda_import` | cuImportExternalMemory + CUDA kernel (goal) |
+| `cuda_mmap` | DmaBuf mmap → CUDA upload (fallback; loud) |
+| (01 SHM) | cuda_ram host path when 05 off / no DmaBuf |
+
+No GL convert in 05.
