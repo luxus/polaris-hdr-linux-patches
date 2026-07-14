@@ -40,7 +40,7 @@ polaris/                       Topic patches applied by polaris-stream
   02-portal-hdr-metadata.patch
   03-web-ui-session-persist.patch
   04-sdr-force-8bit-encode.patch
-  05-portal-dmabuf-linear-mmap.patch
+  05-portal-dmabuf-vulkan-cuda.patch
 gamescope/                     Topic patches applied by gamescope-hdr
   01-pipewire-hdr-metadata.patch
   02-headless-hdr-colorimetry.patch
@@ -60,7 +60,7 @@ lib/ docs/ STATUS.md
 | 02 | Portal HDR metadata + force-file gate | **Working** — client HDR → stream_hdr |
 | 03 | Web UI session persist | **Working** — survives polaris restart |
 | 04 | Force SDR streams to NV12 | **Working** |
-| 05 | LINEAR BGRx/BGRA DMA-BUF Vulkan→CUDA bridge + mmap fallback | **Build-validated; runtime validation pending** |
+| 05 | LINEAR BGRx/BGRA DMA-BUF → Vulkan→CUDA (`convert_path=vulkan_cuda`); sticky `mmap_cuda` fallback | **Working on lea** — 4K60 HDR livingroom, stable frames |
 
 ### gamescope (`gamescope/`)
 

@@ -121,7 +121,7 @@ stdenv'.mkDerivation (finalAttrs: {
     ../../polaris/04-sdr-force-8bit-encode.patch
   ] ++ lib.optionals enablePortalDmabufLinear [
     # 05: LINEAR DmaBuf Vulkan→CUDA bridge; loud mmap_cuda fallback + stats
-    ../../polaris/05-portal-dmabuf-linear-mmap.patch
+    ../../polaris/05-portal-dmabuf-vulkan-cuda.patch
   ];
 
   ui = buildNpmPackage {
