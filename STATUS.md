@@ -2,7 +2,8 @@
 
 | Date | State |
 |------|--------|
-| 2026-07-14 | **Color A (active)**: gamescope `04` ColorMgmt LUTs on `paint_pipewire` only — no EOTF_PQ postPatch yet (IceDOS ladder, step A). Retest AC6 reds/torches. |
+| 2026-07-14 | **Color A+B (active)**: A = ColorMgmt LUTs (`04`); B = IceDOS `postPatch` (`outputEncodingEOTF=PQ` when HDR, pin sdrGamut=0 / nits=203). A alone: reds much better, slightly pale. Retest pale/wash with B. |
+| 2026-07-14 | **Color A result**: LUTs alone fixed oversaturated reds/torches (user: 10000× better); path still spa81/P010/`vulkan_cuda`. |
 | 2026-07-14 | **Polaris nested WSI + HDR + P010 green (lea)**: BP session `POLARIS_GAMESCOPE_WSI=1` → BG3 (`1086940`) under nested gamescope; portal `spa_format=81` / `xBGR_210LE` → `vulkan_cuda` `src_xb30=true` **`dst_p010=true`**; Rec.2020+PQ 10-bit; user picture OK in HDR |
 | 2026-07-14 | **05 P010 convert fix**: CUDA hw frames use `frame->format=AV_PIX_FMT_CUDA`; must use `sw_format` for P010 vs NV12. Prior bug wrote NV12 into P010 → green/pink chroma |
 | 2026-07-14 | **05 set_frame P010**: `cuda_dmabuf_t` accepts NV12+P010 (base `cuda_t` is NV12-only) so HDR sessions connect |
@@ -26,7 +27,7 @@ See [polaris/README.md](polaris/README.md), [gamescope/README.md](gamescope/READ
 | Package | Patches |
 |---------|---------|
 | polaris-stream | `01` portal · `02` HDR · `03` web · `04` force-8bit · `05` Vulkan→CUDA (on by default) |
-| gamescope-hdr | `01` PW HDR meta · `02` headless colorimetry · `03` prefer dmabuf |
+| gamescope-hdr | `01` PW HDR meta · `02` headless colorimetry · `03` prefer dmabuf · `04` ColorMgmt LUTs · postPatch EOTF_PQ |
 | xdg-desktop-portal-gamescope | `01` fix stream size |
 
 ## Archived (not applied)
