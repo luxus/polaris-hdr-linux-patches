@@ -1,0 +1,22 @@
+diff --git a/src/video.cpp b/src/video.cpp
+index 780b549..33a0f58 100644
+--- a/src/video.cpp
++++ b/src/video.cpp
+@@ -3353,8 +3353,15 @@ namespace video {
+     if (dynamic_cast<const encoder_platform_formats_avcodec *>(encoder.platform_formats.get())) {
+       result = disp.make_avcodec_encode_device(*pix_fmt);
+       // Portal SHM CUDA is NV12-only: prefer GPU 8-bit over software 10-bit.
+-      if (result && result->prefer_8bit_encode && colorspace.bit_depth == 10) {
+-        BOOST_LOG(info) << "Using 8-bit NV12 CUDA upload for capture path that cannot do 10-bit GPU frames"sv;
++      // 8-bit NV12 when: SHM path cannot do 10-bit GPU frames, OR stream is non-HDR
++      // (client 10-bit SDR still sets dynamicRange=1 → portal DmaBuf was encoding p010 ~8ms).
++      if (result && colorspace.bit_depth == 10 &&
++          (result->prefer_8bit_encode || !colorspace_is_hdr(colorspace))) {
++        if (result->prefer_8bit_encode) {
++          BOOST_LOG(info) << "Using 8-bit NV12 CUDA upload for capture path that cannot do 10-bit GPU frames"sv;
++        } else {
++          BOOST_LOG(info) << "Using 8-bit NV12 encode for non-HDR stream (avoid p010 cost for 10-bit SDR)"sv;
++        }
+         colorspace.bit_depth = 8;
+         if (auto pix8 = select_encoder_output_pix_fmt(encoder, config, colorspace)) {
+           result = disp.make_avcodec_encode_device(*pix8);

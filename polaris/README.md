@@ -14,12 +14,14 @@ Failed experiments: [`archived/polaris/experimental/`](../archived/polaris/exper
 | `01-portal-pipewire-dmabuf.patch` | Capture / encode | Upstream #152 PipeWire portal capture + same-GPU DmaBuf eligibility (`adapter_name` assume), SHM→CUDA NV12 fallback, negotiate diag, LINEAR mmap/EGL DmaBuf path, prefer gamescope **xBGR_210LE** over BGRx |
 | `02-portal-hdr-metadata.patch` | HDR | Portal reports usable HDR10 mastering metadata; gate `is_hdr` on `$XDG_RUNTIME_DIR/polaris-hdr-force` (client HDR) |
 | `03-web-ui-session-persist.patch` | Web UI | Persist auth sessions across polaris restart (cookie alone is not enough) |
+| `04-sdr-force-8bit-encode.patch` | Encode | Non-HDR streams force 8-bit NV12 even when client requests 10-bit SDR (avoids portal DmaBuf **p010** ~8ms encode) |
 
 ```bash
 # on clean master @ 2008458
 git apply polaris/01-portal-pipewire-dmabuf.patch
 git apply polaris/02-portal-hdr-metadata.patch
 git apply polaris/03-web-ui-session-persist.patch
+git apply polaris/04-sdr-force-8bit-encode.patch
 ```
 
 ## Not applied (archived)

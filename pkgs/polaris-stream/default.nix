@@ -114,6 +114,8 @@ stdenv'.mkDerivation (finalAttrs: {
     ../../polaris/02-portal-hdr-metadata.patch
     # 03: persist Web UI auth sessions across restart
     ../../polaris/03-web-ui-session-persist.patch
+    # 04: non-HDR streams stay 8-bit NV12 (portal DmaBuf was p010 for 10-bit SDR ~8ms)
+    ../../polaris/04-sdr-force-8bit-encode.patch
   ];
 
   ui = buildNpmPackage {
