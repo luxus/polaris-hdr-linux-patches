@@ -69,7 +69,7 @@
   cudaSupport ? config.cudaSupport,
   cudaPackages ? { },
   enableBrowserStream ? true,
-  # Portal LINEAR DmaBuf + CUDA import encode. Default on for testing the CUDA path.
+  # Portal LINEAR DmaBuf + CUDA-EGL (no GL) with loud mmap_cuda fallback. Default on.
   enablePortalDmabufLinear ? true,
 }:
 let
@@ -119,7 +119,7 @@ stdenv'.mkDerivation (finalAttrs: {
     # 04: non-HDR streams stay 8-bit NV12
     ../../polaris/04-sdr-force-8bit-encode.patch
   ] ++ lib.optionals enablePortalDmabufLinear [
-    # 05: LINEAR DmaBuf + CUDA import; loud mmap_cuda fallback + stats
+    # 05: LINEAR DmaBuf + CUDA-EGL (no GL); loud mmap_cuda fallback + stats
     ../../polaris/05-portal-dmabuf-linear-mmap.patch
   ];
 

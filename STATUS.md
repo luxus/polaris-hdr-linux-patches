@@ -2,8 +2,9 @@
 
 | Date | State |
 |------|--------|
+| 2026-07-14 | **05 = CUDA-EGL**: drop dead `cuImportExternalMemory`; try `eglCreateImage`+`cuGraphicsEGLRegisterImage` (no GL convert); loud `mmap_cuda` fallback |
 | 2026-07-14 | **0014 split out**: optional `polaris/05` |
-| 2026-07-14 | **05 = CUDA import**: `cuImportExternalMemory` + pitch2D + RGBA_to_NV12 (not GL); default on for lea A/B |
+| 2026-07-14 | **05 history**: CUDA import tried first (always fails gamescope FDs); loud mmap interim shipped |
 | 2026-07-13 | **Patch cleanup**: topic series under `polaris/` + `gamescope/`; old `0001`…`0015` + experimental → `archived/` |
 | 2026-07-13 | **HDR OK on lea**: no ENABLE_*_WSI; XWayland + prefer xBGR_210LE + portal HDR |
 | 2026-07-13 | **DmaBuf green**: `capture_transport=dmabuf`, EGL import OK, p010 encode |
@@ -35,6 +36,7 @@ See [polaris/README.md](polaris/README.md), [gamescope/README.md](gamescope/READ
 | [#2](https://github.com/luxus/polaris-hdr-linux-patches/issues/2) | Native DMA-BUF polish (mostly done on lea) |
 | [#3](https://github.com/luxus/polaris-hdr-linux-patches/issues/3) | Web UI preview + path/mode clarity |
 | [#4](https://github.com/luxus/polaris-hdr-linux-patches/issues/4) | Stream mode: Gamescope Stream peer of Private Stream |
+| [#5](https://github.com/luxus/polaris-hdr-linux-patches/issues/5) | Portal 4K encode path — minimize conversion (CUDA-EGL experiment) |
 
 ## Verified on lea (2026-07-13 evening)
 
