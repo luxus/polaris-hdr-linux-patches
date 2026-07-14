@@ -33,11 +33,11 @@ See [polaris/README.md](polaris/README.md), [gamescope/README.md](gamescope/READ
 
 | # | Topic |
 |---|--------|
-| [#1](https://github.com/luxus/polaris-hdr-linux-patches/issues/1) | HDR color / real HDR vs SDR (parity with HDMI) |
-| [#2](https://github.com/luxus/polaris-hdr-linux-patches/issues/2) | Native DMA-BUF polish (lea path done; residual product polish) |
-| [#3](https://github.com/luxus/polaris-hdr-linux-patches/issues/3) | Web UI preview + path/mode clarity (`convert_path` already in logs/stats) |
+| [#1](https://github.com/luxus/polaris-hdr-linux-patches/issues/1) | HDR color / real HDR vs SDR (HDMI parity — still open) |
+| [#3](https://github.com/luxus/polaris-hdr-linux-patches/issues/3) | Web UI preview + path/mode clarity |
 | [#4](https://github.com/luxus/polaris-hdr-linux-patches/issues/4) | Stream mode: Gamescope Stream peer of Private Stream |
-| [#5](https://github.com/luxus/polaris-hdr-linux-patches/issues/5) | Portal 4K encode — **Vulkan→CUDA verified on lea**; optional cleanup / producer NV12 stretch |
+
+**Closed (2026-07-14):** [#2](https://github.com/luxus/polaris-hdr-linux-patches/issues/2) native DMA-BUF · [#5](https://github.com/luxus/polaris-hdr-linux-patches/issues/5) Vulkan→CUDA encode path
 
 ## Verified on lea
 
