@@ -2,7 +2,10 @@
 
 | Date | State |
 |------|--------|
-| 2026-07-14 | **05 10-bit restore (code)**: CUDA EnumFormat again offers LINEAR `xBGR_210LE`; vulkan_cuda accepts XB30; `prefer_8bit_encode=false` + CUDA `RGBA_to_P010` for HDR. **Runtime spa 81 + P010 not yet re-verified on lea.** |
+| 2026-07-14 | **Polaris nested WSI + HDR + P010 green (lea)**: BP session `POLARIS_GAMESCOPE_WSI=1` → BG3 (`1086940`) under nested gamescope; portal `spa_format=81` / `xBGR_210LE` → `vulkan_cuda` `src_xb30=true` **`dst_p010=true`**; Rec.2020+PQ 10-bit; user picture OK in HDR |
+| 2026-07-14 | **05 P010 convert fix**: CUDA hw frames use `frame->format=AV_PIX_FMT_CUDA`; must use `sw_format` for P010 vs NV12. Prior bug wrote NV12 into P010 → green/pink chroma |
+| 2026-07-14 | **05 set_frame P010**: `cuda_dmabuf_t` accepts NV12+P010 (base `cuda_t` is NV12-only) so HDR sessions connect |
+| 2026-07-14 | **05 10-bit restore**: CUDA EnumFormat offers LINEAR `xBGR_210LE`; vulkan_cuda accepts XB30; `prefer_8bit_encode=false` + `RGBA_to_P010` |
 | 2026-07-14 | **Session apps cleaned**: keep `Steam Bigscreen (gamescope HDR+WSI)` + `1 Baldur's Gate 3 (gamescope HDR+WSI)`; drop noWSI/forced-SDR/AC6 experimental session entries (local apps.json). |
 | 2026-07-14 | **WSI nested OK** (lea, desktop Steam→gamescope→AC6): full FROG WSI hook + HDR10 swapchain; colors good (user); not Polaris attach |
 | 2026-07-14 | **HDR color OK** (user): close #1; remaining optional path = **WSI nested** (not attach/color) |
@@ -39,11 +42,32 @@ See [polaris/README.md](polaris/README.md), [gamescope/README.md](gamescope/READ
 |---|--------|
 | [#3](https://github.com/luxus/polaris-hdr-linux-patches/issues/3) | Web UI preview + path/mode clarity |
 | [#4](https://github.com/luxus/polaris-hdr-linux-patches/issues/4) | Stream mode: Gamescope Stream peer of Private Stream |
-| [#6](https://github.com/luxus/polaris-hdr-linux-patches/issues/6) | Gamescope **WSI nested** path — desktop Steam+gamescope+AC6 proven 2026-07-14; Polaris session wiring still open |
+| [#6](https://github.com/luxus/polaris-hdr-linux-patches/issues/6) | Gamescope **WSI nested** polish — desktop AC6 + Polaris BP→BG3 WSI+HDR+P010 proven 2026-07-14; remaining = session packaging/docs, not capture stack |
 
 **Closed (2026-07-14):** [#1](https://github.com/luxus/polaris-hdr-linux-patches/issues/1) HDR color · [#2](https://github.com/luxus/polaris-hdr-linux-patches/issues/2) DMA-BUF · [#5](https://github.com/luxus/polaris-hdr-linux-patches/issues/5) Vulkan→CUDA
 
 ## Verified on lea
+
+### 2026-07-14 late evening (Polaris nested WSI + portal 10-bit P010)
+
+Topology: Moonlight **livingroom** → Polaris app **`Steam Bigscreen (gamescope HDR+WSI)`** (`POLARIS_GAMESCOPE_WSI=1`) → nested headless gamescope + Steam BP → **Baldur's Gate 3** (`AppId=1086940`, `bg3`) launched from BP.
+
+| Check | Result |
+|-------|--------|
+| Session start | `Executing Do Cmd: [env POLARIS_GAMESCOPE_WSI=1 …/polaris-hdr-session start]` |
+| App | `Session resuming for app [Steam Bigscreen (gamescope HDR+WSI)]` → `CLIENT CONNECTED` / `stream_active` livingroom |
+| BG3 child env | `ENABLE_GAMESCOPE_WSI=1`, `GAMESCOPE_WAYLAND_DISPLAY=/run/pressure-vessel/gamescope-socket`, `DISPLAY=:2`, `DXVK_HDR=1`; **no** host `WAYLAND_DISPLAY`; `DISABLE_HDR_WSI=1` (FROG layer only) |
+| Capture | `spa_format=81` · `Spa:Enum:VideoFormat:xBGR_210LE` · LINEAR modifier=0 · `capture_transport=dmabuf` · `frame_residency=gpu` |
+| Convert | `CUDA DMABUF: convert_path=vulkan_cuda 3840x2160 … fourcc=0x30334258 (XB30) src_xb30=true dst_p010=true` |
+| Encode / color | `target_format=p010` · `Color depth: 10-bit` · `HDR (Rec. 2020 + SMPTE 2084 PQ)` · `stream_hdr_enabled=true` |
+| User | picture present, **HDR**; green/pink gone after `sw_format` P010 fix |
+| Errors during stream | none (`Error:` / `mmap_cuda` / FALLBACK absent after connect) |
+
+Fixes that unblocked this path (commits on main):
+
+1. `45c34bd` — restore 10-bit xBGR / `RGBA_to_P010` / `prefer_8bit_encode=false` on portal dmabuf device  
+2. `6de55c6` — `cuda_dmabuf_t::set_frame` accepts P010 (stop connect abort)  
+3. `31d2cc2` — detect P010 via **hwframe `sw_format`**, not `frame->format` (stop NV12-into-P010 green/pink)
 
 ### 2026-07-14 evening (nested WSI — desktop Steam, not Polaris attach)
 
@@ -83,4 +107,4 @@ See [docs/polaris-wsi-plan.md](docs/polaris-wsi-plan.md) evidence section.
 | Forced SDR Bigscreen app | `POLARIS_CLIENT_HDR=false` override path |
 | Split encode `auto` | often mode=0 at 4K60; encode headroom fine |
 
-**Still open:** Gamescope Stream UI mode (#4); WebUI path clarity (#3); optional WSI nested (#6) for **Polaris session wiring** (desktop nested WSI + HDR color already green on lea). Attach path + portal color + encode stack remain the default known-good path.
+**Still open:** Gamescope Stream UI mode (#4); WebUI path clarity (#3); WSI nested (#6) polish/packaging (capture+encode stack green on lea for BP→BG3). Attach path remains the default known-good non-nested path; portal color + P010 encode verified on the nested WSI session path as well.

@@ -5,6 +5,8 @@
 | `01`–`04` | always | portal base, HDR, web, force-8bit |
 | `05` (`05-portal-dmabuf-vulkan-cuda.patch`) | **on** | LINEAR one-plane **BGRx/BGRA** (SDR) and **xBGR_210LE / XB30** (HDR) DmaBuf → **Vulkan buffer copy** → CUDA/NVENC (`vulkan_cuda`); HDR → P010, SDR → NV12; failure sticks to loud `mmap_cuda` |
 
+HDR encode uses hwframe **`sw_format`** (`AV_PIX_FMT_P010` vs `NV12`). Do not gate convert on `frame->format` — CUDA frames are `AV_PIX_FMT_CUDA` and a wrong check writes NV12 into P010 (green/pink chroma).
+
 ## Convert paths
 
 | convert_path | Meaning |
