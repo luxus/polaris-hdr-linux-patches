@@ -13,7 +13,7 @@ index 02e184f..b5ce4a4 100644
              "${CMAKE_SOURCE_DIR}/src/platform/linux/cuda.h"
              "${CMAKE_SOURCE_DIR}/src/platform/linux/cuda.cu"
 diff --git a/src/platform/linux/cuda.cpp b/src/platform/linux/cuda.cpp
-index 82384af..80afe13 100644
+index 82384af..62f028d 100644
 --- a/src/platform/linux/cuda.cpp
 +++ b/src/platform/linux/cuda.cpp
 @@ -5,13 +5,20 @@
@@ -53,7 +53,7 @@ index 82384af..80afe13 100644
  
    void pass_error(const std::string_view &sv, const char *name, const char *description) {
      BOOST_LOG(error) << sv << name << ':' << description;
-@@ -593,6 +602,871 @@ namespace cuda {
+@@ -593,6 +602,879 @@ namespace cuda {
      int offset_x, offset_y;
    };
  
@@ -134,6 +134,7 @@ index 82384af..80afe13 100644
 +
 +    int set_frame(AVFrame *frame, AVBufferRef *hw_frames_ctx_buf) override {
 +      // Accept NV12 (SDR) and P010 (HDR 10-bit). Base cuda_t only allows NV12.
++      // CUDA hw frames use frame->format=AV_PIX_FMT_CUDA; real layout is sw_format.
 +      this->hwframe.reset(frame);
 +      this->frame = frame;
 +
@@ -143,6 +144,7 @@ index 82384af..80afe13 100644
 +                         << hwframe_ctx->sw_format;
 +        return -1;
 +      }
++      encode_sw_format = hwframe_ctx->sw_format;
 +
 +      if (!frame->buf[0]) {
 +        if (av_hwframe_get_buffer(hw_frames_ctx_buf, frame, 0)) {
@@ -289,7 +291,8 @@ index 82384af..80afe13 100644
 +        return convert_blank();
 +      }
 +      const auto texture = force_mmap ? tex_obj(*staging_tex) : destination_texture;
-+      return sws.convert(frame->data[0], frame->data[1], frame->linesize[0], frame->linesize[1], texture, stream.get());
++      return sws.convert(frame->data[0], frame->data[1], frame->linesize[0], frame->linesize[1], texture, stream.get(),
++        encode_sw_format == AV_PIX_FMT_P010, source_fourcc == DRM_FORMAT_XBGR2101010);
 +    }
 +
 +    int convert_blank() {
@@ -304,7 +307,8 @@ index 82384af..80afe13 100644
 +      std::vector<std::uint8_t> zeros(static_cast<std::size_t>(blank.row_pitch) * blank.height, 0);
 +      blank.data = zeros.data();
 +      return sws.load_ram(blank, staging_tex->array) ||
-+        sws.convert(frame->data[0], frame->data[1], frame->linesize[0], frame->linesize[1], tex_obj(*staging_tex), stream.get());
++        sws.convert(frame->data[0], frame->data[1], frame->linesize[0], frame->linesize[1], tex_obj(*staging_tex), stream.get(),
++          encode_sw_format == AV_PIX_FMT_P010, false);
 +    }
 +
 +    int convert_mmap(egl::img_descriptor_t &descriptor) {
@@ -346,7 +350,9 @@ index 82384af..80afe13 100644
 +      if (load_result) {
 +        return -1;
 +      }
-+      return sws.convert(frame->data[0], frame->data[1], frame->linesize[0], frame->linesize[1], tex_obj(*staging_tex), stream.get());
++      // mmap staging is uchar4; XB30 bytes will be wrong here — only SDR/fallback path.
++      return sws.convert(frame->data[0], frame->data[1], frame->linesize[0], frame->linesize[1], tex_obj(*staging_tex), stream.get(),
++        encode_sw_format == AV_PIX_FMT_P010, false);
 +    }
 +
 +    bool has_device_extension(const std::vector<VkExtensionProperties> &extensions, const char *name) const {
@@ -804,15 +810,15 @@ index 82384af..80afe13 100644
 +          !vk_call(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX), "vkWaitForFences"sv)) {
 +        return -1;
 +      }
-+      const bool dst_p010 = frame && (frame->format == AV_PIX_FMT_P010);
++      // frame->format is AV_PIX_FMT_CUDA for NVENC; use stored sw_format for layout.
++      const bool dst_p010 = encode_sw_format == AV_PIX_FMT_P010;
 +      const bool src_xb30 = descriptor.sd.fourcc == DRM_FORMAT_XBGR2101010;
 +      const int result = sws.convert(frame->data[0], frame->data[1], frame->linesize[0], frame->linesize[1],
 +        destination_texture, stream.get(), dst_p010, src_xb30);
 +      if (result) {
 +        return result;
 +      }
-+      const auto fmt = (descriptor.sd.fourcc == DRM_FORMAT_XBGR2101010) ?
-+        platf::frame_format_e::p010 : platf::frame_format_e::bgra8;
++      const auto fmt = dst_p010 ? platf::frame_format_e::p010 : platf::frame_format_e::bgra8;
 +      stream_stats::update_encode_path_metadata(
 +        "vulkan_cuda",
 +        platf::frame_residency_e::gpu,
@@ -822,6 +828,7 @@ index 82384af..80afe13 100644
 +        BOOST_LOG(info) << "CUDA DMABUF: convert_path=vulkan_cuda "sv << width << 'x' << height
 +                        << " pitch="sv << destination_pitch
 +                        << " fourcc=0x"sv << std::hex << descriptor.sd.fourcc << std::dec
++                        << " src_xb30="sv << src_xb30 << " dst_p010="sv << dst_p010
 +                        << " source imports cached; destination mapping persistent"sv;
 +        vulkan_logged = true;
 +      }
@@ -920,12 +927,13 @@ index 82384af..80afe13 100644
 +    CUdeviceptr destination_device_ptr {0};
 +    cudaTextureObject_t destination_texture {0};
 +    std::uint32_t source_fourcc {0};
++    AVPixelFormat encode_sw_format {AV_PIX_FMT_NONE};
 +  };
 +
    std::unique_ptr<platf::avcodec_encode_device_t> make_avcodec_encode_device(int width, int height, bool vram) {
      if (init()) {
        return nullptr;
-@@ -635,6 +1509,22 @@ namespace cuda {
+@@ -635,6 +1517,22 @@ namespace cuda {
      return cuda;
    }
  
