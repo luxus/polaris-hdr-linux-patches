@@ -1,25 +1,25 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: patch-rebuild <patches@local>
-Date: Wed, 15 Jul 2026 11:20:00 +0200
-Subject: [PATCH] topic6: sync polaris-hdr-force with session/stream HDR
+Date: Wed, 15 Jul 2026 11:30:00 +0200
+Subject: [PATCH] topic6: sync polaris-hdr-force (no gamescope restart)
 
-Avoid hybrid PQ capture + SDR encode.
+Write polaris-hdr-force for portal is_hdr only. Do not restart idle
+gamescope from process/video probe (encoder probes thrash HDR flags).
 ---
 --- a/src/process.cpp	2026-07-13 02:15:49.000000000 +0200
-+++ b/src/process.cpp	2026-07-15 11:09:07.589126817 +0200
-@@ -2449,6 +2449,47 @@
++++ b/src/process.cpp
+@@ -2449,6 +2449,34 @@
        launch_session->enable_hdr = *resolved_optimization.hdr;
      }
  
 +#ifdef __linux__
-+    // Keep portal is_hdr/get_hdr_metadata gate aligned with session HDR intent.
-+    // polaris-hdr-session also writes this file; doing it here covers Desktop /
-+    // no-prep apps and client_profiles.hdr=false before encode starts.
++    // Sync portal is_hdr gate only. Do NOT restart gamescope here — encoder
++    // probe calls this path with dynamicRange 0 and 1 and would thrash idle
++    // (visible flicker). polaris-hdr-session owns idle restart on session start.
 +    {
 +      const char *rt = std::getenv("XDG_RUNTIME_DIR");
 +      if (rt && *rt) {
 +        const auto force_path = std::filesystem::path(rt) / "polaris-hdr-force";
-+        const auto nested_path = std::filesystem::path(rt) / "polaris-hdr-wsi-nested";
 +        std::string prev;
 +        {
 +          std::ifstream in(force_path);
@@ -29,24 +29,12 @@ Avoid hybrid PQ capture + SDR encode.
 +          }
 +        }
 +        const std::string want = launch_session->enable_hdr ? "1" : "0";
-+        {
++        if (prev != want) {
 +          std::ofstream out(force_path, std::ios::trunc);
 +          out << want << '\n';
-+        }
-+        const bool prev_on = (prev == "1" || prev == "true");
-+        const bool want_on = launch_session->enable_hdr;
-+        if (prev_on != want_on) {
 +          BOOST_LOG(info) << "portal HDR force -> "sv << want << " (was \""sv << prev
-+                          << "\") from enable_hdr="sv << (want_on ? "true"sv : "false"sv);
-+          // Nested WSI owns its gamescope child; idle restart would fight it.
-+          if (!std::filesystem::exists(nested_path)) {
-+            const int rc = std::system(
-+              "systemctl --user try-restart polaris-hdr-idle.service >/dev/null 2>&1");
-+            if (rc != 0) {
-+              BOOST_LOG(debug) << "portal HDR force: idle try-restart rc="sv << rc
-+                               << " (ok if unit absent / not portal session)"sv;
-+            }
-+          }
++                          << "\") from enable_hdr="sv
++                          << (launch_session->enable_hdr ? "true"sv : "false"sv);
 +        }
 +      }
 +    }
@@ -55,8 +43,8 @@ Avoid hybrid PQ capture + SDR encode.
      if (resolved_optimization.virtual_display.has_value()) {
        launch_session->virtual_display = *resolved_optimization.virtual_display;
      }
---- a/src/video.cpp	2026-07-13 02:15:49.000000000 +0200
-+++ b/src/video.cpp	2026-07-15 11:09:07.601644314 +0200
+--- a/src/video.cpp	2026-07-15 11:18:29.906225747 +0200
++++ b/src/video.cpp
 @@ -7,6 +7,7 @@
  #include <atomic>
  #include <bitset>
@@ -65,21 +53,19 @@ Avoid hybrid PQ capture + SDR encode.
  #include <filesystem>
  #include <fcntl.h>
  #include <fstream>
-@@ -524,6 +525,55 @@
+@@ -524,6 +525,36 @@
  
      hdr_probe_t probe_display_hdr(platf::display_t &disp, const config_t &config) {
        hdr_probe_t probe;
 +
 +#ifdef __linux__
-+      // Stream dynamicRange is the encode truth. If the client asked SDR but the
-+      // portal force file still claims HDR (leftover session / profile race),
-+      // clear it and restart idle gamescope so capture is not PQ-shaped XB30
-+      // while the bitstream is Rec.601 NV12 (iPhone/VoidLink teal/chroma mess).
++      // Align force file with stream dynamicRange for portal is_hdr/metadata.
++      // Never systemctl-restart gamescope from probe — capability probes flip
++      // dynamicRange 0/1 repeatedly and restarting idle caused stream flicker.
 +      {
 +        const char *rt = std::getenv("XDG_RUNTIME_DIR");
 +        if (rt && *rt) {
 +          const auto force_path = std::filesystem::path(rt) / "polaris-hdr-force";
-+          const auto nested_path = std::filesystem::path(rt) / "polaris-hdr-wsi-nested";
 +          const bool want_on = config.dynamicRange > 0;
 +          std::string prev;
 +          {
@@ -90,29 +76,12 @@ Avoid hybrid PQ capture + SDR encode.
 +            }
 +          }
 +          const bool prev_on = (prev == "1" || prev == "true");
-+          const std::string want = want_on ? "1" : "0";
-+          if (prev_on != want_on || prev.empty()) {
-+            {
-+              std::ofstream out(force_path, std::ios::trunc);
-+              out << want << '\n';
-+            }
-+            if (prev_on != want_on) {
-+              BOOST_LOG(info) << "portal HDR force -> "sv << want
-+                              << " from stream dynamicRange="sv << config.dynamicRange
-+                              << " (was \""sv << prev << "\")"sv;
-+              if (!std::filesystem::exists(nested_path)) {
-+                const int rc = std::system(
-+                  "systemctl --user try-restart polaris-hdr-idle.service >/dev/null 2>&1");
-+                if (rc == 0) {
-+                  // Give headless gamescope a moment to rebind gamescope-0 / PW.
-+                  std::this_thread::sleep_for(std::chrono::milliseconds(400));
-+                } else {
-+                  BOOST_LOG(debug) << "portal HDR force: idle try-restart rc="sv << rc;
-+                }
-+              } else {
-+                BOOST_LOG(warning) << "portal HDR force changed under nested WSI; capture TF may stay hybrid until session restart"sv;
-+              }
-+            }
++          if (prev_on != want_on) {
++            std::ofstream out(force_path, std::ios::trunc);
++            out << (want_on ? "1" : "0") << '\n';
++            BOOST_LOG(info) << "portal HDR force -> "sv << (want_on ? "1"sv : "0"sv)
++                            << " from stream dynamicRange="sv << config.dynamicRange
++                            << " (was \""sv << prev << "\"; no idle restart)"sv;
 +          }
 +        }
 +      }

@@ -11,7 +11,7 @@
 ## Active patch boundaries
 
 - Polaris `01`–`04` and `06` are always applied; `05-portal-dmabuf-vulkan-cuda.patch` is enabled by default through `enablePortalDmabufLinear`.
-- Keep the Polaris topics separate: `01` portal/PipeWire capture, `02` HDR metadata and force gate, `03` Web UI sessions, `04` SDR 8-bit encode, `05` portal Vulkan-to-CUDA conversion, `06` session `polaris-hdr-force` sync (no hybrid PQ+SDR).
+- Keep the Polaris topics separate: `01` portal/PipeWire capture, `02` HDR metadata and force gate, `03` Web UI sessions, `04` SDR 8-bit encode, `05` portal Vulkan-to-CUDA conversion, `06` write `polaris-hdr-force` only (never restart gamescope from encode probe).
 - Gamescope applies `01` HDR PipeWire metadata, `02` headless HDR colorimetry, `03` prefer-DMA-BUF, plus Color **A+B** (ColorMgmt LUTs + `EOTF_PQ` when HDR) in `pkgs/gamescope-hdr`. The portal package applies only its stream-size patch.
 - Patch formats in this repository are mixed. Preserve the surrounding format and avoid whole-file regeneration unless intentionally rebuilding a topic against its pinned upstream revision.
 - When changing an upstream pin, update all coupled revision/version/hash fields and regenerate or rebase every affected active patch. A patch applying with fuzz is not sufficient verification.
