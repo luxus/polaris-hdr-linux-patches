@@ -2,6 +2,7 @@
 
 | Date | State |
 |------|--------|
+| 2026-07-15 | **Deployed lea**: `nh os switch` gen after patches `d48b738` (06 force-sync). polaris+idle restarted. iPhone profile `hdr:false` on host. |
 | 2026-07-15 | **Hybrid true-SDR + PQ keep**: new `06` syncs `polaris-hdr-force` to `enable_hdr` + stream `dynamicRange` and try-restarts idle gamescope (skips nested WSI). Gamescope Color **A+B kept** (PQ paint for HDR TV/Mac). iPhone profile → `hdr:false` on host. |
 | 2026-07-15 | **Host color polish (not iPhone rootcause)**: `02` Rec.2020 stub primaries exact (35400/14600, 8500/39850, 6550/2300 + D65). `05` P010 uses `new_color_vectors_from_colorspace` (10-bit code values) instead of UNORM+245/255. |
 | 2026-07-15 | **Log spot-check**: emily HDR `spa_format=81` / `vulkan_cuda` `src_xb30=true dst_p010=true` / Rec.2020+PQ after polish. |
