@@ -119,8 +119,10 @@ stdenv'.mkDerivation (finalAttrs: {
     ../../polaris/03-web-ui-session-persist.patch
     # 04: non-HDR streams stay 8-bit NV12
     ../../polaris/04-sdr-force-8bit-encode.patch
-    # 06: sync polaris-hdr-force with enable_hdr + stream dynamicRange (no hybrid PQ+SDR)
+    # 06: write polaris-hdr-force from enable_hdr only (session owns gamescope restart)
     ../../polaris/06-session-hdr-force-sync.patch
+    # 07: device_db hdr_capable must not force enable_hdr (hybrid XB30+SDR on tablets)
+    ../../polaris/07-device-db-hdr-not-request.patch
   ] ++ lib.optionals enablePortalDmabufLinear [
     # 05: LINEAR DmaBuf Vulkan→CUDA bridge; loud mmap_cuda fallback + stats
     ../../polaris/05-portal-dmabuf-vulkan-cuda.patch

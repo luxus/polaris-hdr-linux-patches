@@ -3,7 +3,8 @@
 | Patch | Default | What |
 |-------|---------|------|
 | `01`–`04` | always | portal base, HDR, web, force-8bit |
-| `06` (`06-session-hdr-force-sync.patch`) | always | write `polaris-hdr-force` from `enable_hdr` + stream `dynamicRange`; try-restart idle gamescope when force flips (skip if nested WSI) |
+| `06` (`06-session-hdr-force-sync.patch`) | always | write `polaris-hdr-force` from final `enable_hdr` (no gamescope restart) |
+| `07` (`07-device-db-hdr-not-request.patch`) | always | `device_db`/`ai` `hdr_capable` must not force `enable_hdr`; only client_profile locks HDR |
 | `05` (`05-portal-dmabuf-vulkan-cuda.patch`) | **on** | LINEAR one-plane **BGRx/BGRA** (SDR) and **xBGR_210LE / XB30** (HDR) DmaBuf → **Vulkan buffer copy** → CUDA/NVENC (`vulkan_cuda`); HDR → P010, SDR → NV12; failure sticks to loud `mmap_cuda` |
 
 HDR encode uses hwframe **`sw_format`** (`AV_PIX_FMT_P010` vs `NV12`). Do not gate convert on `frame->format` — CUDA frames are `AV_PIX_FMT_CUDA` and a wrong check writes NV12 into P010 (green/pink chroma).
