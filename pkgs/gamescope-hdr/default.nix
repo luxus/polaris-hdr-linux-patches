@@ -1,11 +1,6 @@
-# gamescope with IceDOS/Jovian-oriented HDR PipeWire metadata patches
-# (https://github.com/papi-ux/polaris/issues/152). Opt-in for HDR headless sessions.
-# enableWsi: build VkLayer_FROG_gamescope_wsi (ENABLE_GAMESCOPE_WSI / ENABLE_HDR_WSI).
-#
-# Color experiment ladder (one step at a time):
-#   A (04): paint_pipewire uses g_ColorMgmtLuts
-#   B (postPatch): outputEncodingEOTF=PQ when HDR + pin nits/gamut defaults
-# Stock was screenshot LUTs + EOTF_Gamma22.
+# gamescope HDR capture stack (polaris#152).
+# enableWsi=true always: layer built; attach-only has been flaky — keep nested path available.
+# Color A+B: 04 ColorMgmt LUTs + postPatch EOTF_PQ when HDR.
 { gamescope }:
 
 (gamescope.override { enableWsi = true; }).overrideAttrs (old: {

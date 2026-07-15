@@ -172,7 +172,6 @@ Emily/Mac with `0` often lands MPEG; iOS often lands full unless forced.
 
 | Topic | Relation |
 |-------|----------|
-| `docs/polaris-hdr-color.md` | Washed/colorless HDR vs HDMI — fidelity, not iPhone channel swap |
 | Patch `05` P010 / `sw_format` | Fixed earlier green/pink **host** bug for all clients; iPhone issue remains **after** that fix |
 | Host polish 2026-07-15 | `02` exact Rec.2020 primaries; `05` P010 uses `new_color_vectors` (10-bit). **Not expected to fix iPhone channel mess**; retest Mac/TV after deploy. Gamescope Color A+B/PQ unchanged. |
 | Mac audio crackle | WiFi; mitigated by moonlight-qt wireless fork (jitter buffer + AWDL) |

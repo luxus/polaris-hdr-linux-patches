@@ -1,26 +1,25 @@
 # Polaris patches
 
+Wired by `pkgs/polaris-stream/default.nix`.
+
 | Patch | Default | What |
 |-------|---------|------|
-| `01`–`04` | always | portal base, HDR, web, force-8bit |
-| `06` (`06-session-hdr-force-sync.patch`) | always | write `polaris-hdr-force` from final `enable_hdr` (no gamescope restart) |
-| `07` (`07-device-db-hdr-not-request.patch`) | always | `device_db`/`ai` `hdr_capable` must not force `enable_hdr`; only client_profile locks HDR |
-| `05` (`05-portal-dmabuf-vulkan-cuda.patch`) | **on** | LINEAR one-plane **BGRx/BGRA** (SDR) and **xBGR_210LE / XB30** (HDR) DmaBuf → **Vulkan buffer copy** → CUDA/NVENC (`vulkan_cuda`); HDR → P010, SDR → NV12; failure sticks to loud `mmap_cuda` |
+| `01`–`04` | always | portal PipeWire/DmaBuf, HDR metadata+force gate, web sessions, SDR force 8-bit |
+| `06` | always | write `polaris-hdr-force` from final `enable_hdr` only (no gamescope restart, no encode-probe rewrite) |
+| `07` | always | `device_db`/`ai` `hdr_capable` ≠ session HDR request; only `client_profile` locks `enable_hdr` |
+| `05` | **on** (`enablePortalDmabufLinear`) | LINEAR one-plane BGRx/BGRA or xBGR_210LE → Vulkan copy → CUDA (`vulkan_cuda`); HDR→P010, SDR→NV12; sticky loud `mmap_cuda` fallback |
 
-HDR encode uses hwframe **`sw_format`** (`AV_PIX_FMT_P010` vs `NV12`). Do not gate convert on `frame->format` — CUDA frames are `AV_PIX_FMT_CUDA` and a wrong check writes NV12 into P010 (green/pink chroma).
+## Invariants
 
-CUDA `sws_t::convert` clears the full destination Y/UV to true black (Y=0, UV mid) before writing the letterboxed content viewport. Without that, aspect-ratio padding stayed uninitialized and showed as green bars on all clients.
-
-P010 (`bit_depth >= 10`) uses `new_color_vectors_from_colorspace` (H.273 code values) and packs `code << 6`. NV12 keeps legacy UNORM vectors + `*245`/`*256`. Portal HDR metadata (`02`) stubs exact Rec.2020 primaries + D65 (not approximate).
-
-`06` prevents hybrid **PQ capture + SDR encode**: force file follows session HDR and stream `dynamicRange`. SDR clients should show `display_hdr=false` and gamescope without `--hdr-enabled`.
-
-## Convert paths
+- HDR encode: gate on hwframe **`sw_format`** (`P010` vs `NV12`), not `frame->format` (`CUDA` frames are always `AV_PIX_FMT_CUDA`).
+- Letterbox: clear Y/UV padding **only when letterboxed**; full-frame clear every frame races NVENC (black flash). Sync CUDA stream after convert.
+- Convert honesty: never report `gpu_native` for CPU/mmap paths; keep `mmap_cuda` ≠ `vulkan_cuda`.
+- Hybrid tablets: capability-forced HDR + SDR encode = wild colors — fixed by `07` + honest client profiles.
 
 | convert_path | Meaning |
 |--------------|---------|
-| `vulkan_cuda` | cached Vulkan DMA-BUF source → persistent OPAQUE_FD destination/CUDA mapping → CUDA conversion |
-| `mmap_cuda` | DmaBuf mmap → CUDA upload (sticky fallback; not gpu_native) |
-| (01 SHM) | cuda_ram host path when 05 off / no DmaBuf |
+| `vulkan_cuda` | portal fast path |
+| `mmap_cuda` | sticky DmaBuf mmap fallback |
+| (01 SHM) | host path when no DmaBuf / 05 off |
 
-The Vulkan bridge is portal-only. Existing GL→CUDA support remains unchanged for KMS, Wayland, and other tiled DMA-BUF capture.
+Portal-only Vulkan bridge. KMS/Wayland GL→CUDA paths stay untouched.

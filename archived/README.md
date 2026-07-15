@@ -1,11 +1,11 @@
 # Archived patches
 
-Not applied by the flake packages. Kept for history and archaeology.
+Not applied by flake packages. History only.
 
 | Tree | Contents |
 |------|----------|
-| `polaris/issue-152-series/` | Old numbered `0001`…`0015` + `combined.patch` (pre topic rewrite). Equivalent live stack is `polaris/01`–`03`. **0009** deliberately never applied. |
-| `polaris/experimental/` | Early gist DmaBuf / EGL / CUDA-GL experiments (superseded by `01-portal-pipewire-dmabuf`). |
-| `gamescope/pipewire-color-mgmt.patch` | PQ + ColorMgmt on PipeWire capture — rejected after wash regression. |
+| `polaris/issue-152-series/` | Old numbered `0001`…`0015` (pre topic rewrite). Live stack: `polaris/01`–`07`. **0009** never applied. |
+| `polaris/experimental/` | Early gist DmaBuf / EGL / CUDA-GL (dead on desktop NVIDIA). |
+| `gamescope/pipewire-color-mgmt.patch` | Older ColorMgmt variant — not the active A+B path. |
 
-Do not add these to `pkgs/*/default.nix` without a new measured reason.
+Do not wire into `pkgs/*/default.nix` without new measured evidence.

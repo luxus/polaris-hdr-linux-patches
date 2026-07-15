@@ -1,26 +1,17 @@
 # gamescope-hdr patches
 
-Applied by `pkgs/gamescope-hdr` (nixpkgs gamescope + `enableWsi = true`).
+Wired by `pkgs/gamescope-hdr` (nixpkgs gamescope + **`enableWsi = true` always**).
 
-| Patch | Topic |
-|-------|--------|
-| `01-pipewire-hdr-metadata.patch` | Expose HDR metadata on PipeWire stream (IceDOS / polaris#152) |
-| `02-headless-hdr-colorimetry.patch` | Headless backend HDR colorimetry / force-HDR support flags |
-| `03-pipewire-prefer-dmabuf.patch` | Prefer `SPA_DATA_DmaBuf` when consumer allows |
-| `04-pipewire-color-mgmt.patch` | **A:** `paint_pipewire` uses `g_ColorMgmtLuts` (IceDOS) |
-| postPatch in `pkgs/gamescope-hdr` | **B:** `outputEncodingEOTF = HDR ? PQ : Gamma22` + pin nits/gamut |
+| Patch / hook | Topic |
+|--------------|--------|
+| `01` | PipeWire HDR metadata |
+| `02` | Headless HDR colorimetry / force-HDR flags |
+| `03` | Prefer `SPA_DATA_DmaBuf` |
+| `04` | **A:** `paint_pipewire` uses `g_ColorMgmtLuts` |
+| package `postPatch` | **B:** `EOTF_PQ` when HDR + pin SDR-on-HDR nits/gamut |
 
-## Color experiment ladder
+## Notes
 
-| Step | Change | Status |
-|------|--------|--------|
-| **A** | ColorMgmt LUTs on PW (`04`) | **active** (reds much better; slightly pale) |
-| **B** | `outputEncodingEOTF = HDR ? PQ : Gamma22` + nits/gamut postPatch | **active** (A+B) — keep for TV/Mac HDR path (measured OK on livingroom/emily) |
-| archive | older gated ColorMgmt variant | `archived/gamescope/pipewire-color-mgmt.patch` |
-
-**PQ decision (2026-07-15):** leave A+B on. Do not strip B without a livingroom A/B; iPhone color is a client/hybrid issue, not a reason to drop PQ paint.
-
-## Runtime (host)
-
-- WSI layer is **built** (`enableWsi`); nested Polaris path sets `ENABLE_GAMESCOPE_WSI` for children.
-- Session HDR flags: host-owned (`polaris-hdr-session`); prefer flake pin over path overrides.
+- **A+B is the measured HDR path.** Do not strip without a livingroom/Mac A/B.
+- **WSI stays built on.** Plain XWayland attach has been unreliable here; nested WSI is kept available. Building the layer ≠ enabling it on every Proton env — session wiring decides runtime `ENABLE_GAMESCOPE_WSI`.
+- Nested WSI evidence/plan: [docs/polaris-wsi-plan.md](../docs/polaris-wsi-plan.md) (#6).

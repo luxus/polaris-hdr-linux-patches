@@ -6,19 +6,18 @@ Subject: [PATCH] topic7: device_db hdr_capable is not a session HDR request
 Do not force enable_hdr/gamescope HDR from device capability alone.
 Prevents hybrid XB30 capture + SDR encode on capable tablets.
 ---
---- a/src/process.cpp	2026-07-15 13:04:02.153500675 +0200
-+++ b/src/process.cpp	2026-07-15 13:04:02.228651844 +0200
-@@ -2445,8 +2445,17 @@
+--- a/src/process.cpp
++++ b/src/process.cpp
+@@ -2445,8 +2445,16 @@
        config::video.color_range = *resolved_optimization.color_range;
      }
  
 -    if (resolved_optimization.hdr.has_value()) {
 +    // device_db sets hdr from hdr_capable (capability), not a session request.
-+    // Only client_profile (optimization_locks.hdr) may force enable_hdr; otherwise
-+    // keep the client hdrMode. Capability-forced HDR + SDR stream = hybrid PQ/NV12.
++    // Only client_profile (optimization_locks.hdr) may force enable_hdr.
 +    if (resolved_optimization.hdr.has_value() && optimization_locks.hdr) {
        launch_session->enable_hdr = *resolved_optimization.hdr;
-+    } else if (resolved_optimization.hdr.has_value() && !optimization_locks.hdr &&
++    } else if (resolved_optimization.hdr.has_value() &&
 +               *resolved_optimization.hdr != launch_session->enable_hdr) {
 +      BOOST_LOG(info) << "Ignoring non-profile HDR optimization (device_db/ai capability) "
 +                      << (*resolved_optimization.hdr ? "enabled"sv : "disabled"sv)

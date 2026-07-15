@@ -7,34 +7,23 @@ Session prep owns gamescope restart. Do not touch force from video probe.
 ---
 --- a/src/process.cpp
 +++ b/src/process.cpp
-@@ -2449,6 +2449,34 @@
+@@ -2449,6 +2449,23 @@
        launch_session->enable_hdr = *resolved_optimization.hdr;
      }
  
 +#ifdef __linux__
-+    // Portal is_hdr reads this file. Write once from final enable_hdr.
-+    // Never restart gamescope here; never rewrite from encoder probe (dynamicRange
-+    // flips 0/1 and races polaris-hdr-session). Session owns idle restart.
++    // Portal is_hdr reads this file. Write from final enable_hdr only.
++    // Never restart gamescope or rewrite from encoder probe. Session owns restart.
 +    {
 +      const char *rt = std::getenv("XDG_RUNTIME_DIR");
 +      if (rt && *rt) {
 +        const auto force_path = std::filesystem::path(rt) / "polaris-hdr-force";
-+        std::string prev;
-+        {
-+          std::ifstream in(force_path);
-+          std::getline(in, prev);
-+          while (!prev.empty() && (prev.back() == '\r' || prev.back() == '\n' || prev.back() == ' ')) {
-+            prev.pop_back();
-+          }
-+        }
-+        const std::string want = launch_session->enable_hdr ? "1" : "0";
-+        if (prev != want) {
-+          std::ofstream out(force_path, std::ios::trunc);
-+          out << want << '\n';
-+          BOOST_LOG(info) << "portal HDR force -> "sv << want << " (was \""sv << prev
-+                          << "\") from enable_hdr="sv
-+                          << (launch_session->enable_hdr ? "true"sv : "false"sv);
-+        }
++        std::ofstream out(force_path, std::ios::trunc);
++        out << (launch_session->enable_hdr ? "1" : "0") << '\n';
++        BOOST_LOG(info) << "portal HDR force -> "sv
++                        << (launch_session->enable_hdr ? "1"sv : "0"sv)
++                        << " from enable_hdr="sv
++                        << (launch_session->enable_hdr ? "true"sv : "false"sv);
 +      }
 +    }
 +#endif

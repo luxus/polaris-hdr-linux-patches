@@ -1,17 +1,18 @@
 # polaris-hdr-linux-patches
 
-Working flake for Linux GameStream / HDR research around
-[polaris#152](https://github.com/papi-ux/polaris/issues/152).
+Downstream patch stacks for pinned **Polaris**, **Gamescope**, and
+`xdg-desktop-portal-gamescope` (HDR GameStream / portal capture research for
+[polaris#152](https://github.com/papi-ux/polaris/issues/152)).
 
-Exports packages + overlay. **Archived** (unused) patches live under `archived/`
-and are not applied.
+Exports packages + overlay. Consumer hosts (e.g. luxusAi) own session scripts,
+services, and runtime force files. **`archived/` is never applied.**
 
 ## Flake outputs
 
 | Output | What |
 |--------|------|
-| `packages.<sys>.polaris-stream` | Polaris **master** + topic patches (`polaris/01`–`05`) |
-| `packages.<sys>.gamescope-hdr` | gamescope + HDR PW + prefer-dmabuf + WSI **built** |
+| `packages.<sys>.polaris-stream` | Polaris + `01`–`04`,`06`,`07` always; `05` Vulkan→CUDA default on |
+| `packages.<sys>.gamescope-hdr` | gamescope + HDR PW + prefer-dmabuf + Color **A+B** + **WSI built** |
 | `packages.<sys>.xdg-desktop-portal-gamescope` | Jovian portal + stream-size fix |
 | `packages.<sys>.polaris-nvidia-pin` | Hybrid-GPU pin shell snippet |
 | `overlays.default` | All of the above on `pkgs` |
@@ -21,75 +22,46 @@ inputs.polaris-hdr-linux-patches = {
   url = "github:luxus/polaris-hdr-linux-patches";
   inputs.nixpkgs.follows = "nixpkgs";
 };
-# nixos
 nixpkgs.overlays = [ inputs.polaris-hdr-linux-patches.overlays.default ];
 ```
 
 ```bash
 nix build .#polaris-stream
 nix build .#gamescope-hdr
+nix build .#xdg-desktop-portal-gamescope
 ```
 
 ## Layout
 
 ```
-flake.nix
-pkgs/                          Nix packages (wired)
-polaris/                       Topic patches applied by polaris-stream
-  01-portal-pipewire-dmabuf.patch
-  02-portal-hdr-metadata.patch
-  03-web-ui-session-persist.patch
-  04-sdr-force-8bit-encode.patch
-  05-portal-dmabuf-vulkan-cuda.patch
-gamescope/                     Topic patches applied by gamescope-hdr
-  01-pipewire-hdr-metadata.patch
-  02-headless-hdr-colorimetry.patch
-  03-pipewire-prefer-dmabuf.patch
-xdg-desktop-portal-gamescope/  Portal package patches
-archived/                      Old numbered series + failed experiments
-lib/ docs/ STATUS.md
+flake.nix / pkgs/          wired packages (source of truth for what applies)
+polaris/                   01–07 topic patches
+gamescope/                 01–04 + Color B via postPatch in package
+xdg-desktop-portal-gamescope/
+lib/                       polaris-nvidia-pin.sh
+docs/                      research notes (history when they conflict with pkgs)
+archived/                  old series + failed experiments — never applied
+STATUS.md                  current verified state
 ```
 
-## Patch review (active stack)
+## Active stack (summary)
 
-### Polaris (`polaris/`)
+| Area | What ships |
+|------|------------|
+| Polaris portal | PipeWire DmaBuf same-GPU capture → Vulkan buffer copy → CUDA/NVENC (`vulkan_cuda`) |
+| HDR | 10-bit `xBGR_210LE` + P010 + Rec.2020/PQ metadata; force file from `enable_hdr` only |
+| SDR | Independent 8-bit/NV12 path; device_db capability does not force HDR (`07`) |
+| Gamescope | PW HDR meta, headless colorimetry, prefer DmaBuf, ColorMgmt LUTs + PQ paint when HDR |
+| WSI | Layer **always built** (`enableWsi = true`). Nested presentation when session opts in; do not spray `ENABLE_*_WSI` on plain attach for “better capture” |
 
-| # | Topic | Status on lea |
-|---|--------|----------------|
-| 01 | Portal PipeWire capture + same-GPU DmaBuf + CUDA path + prefer xBGR_210LE | **Working** — dmabuf + p010 encode |
-| 02 | Portal HDR metadata + force-file gate | **Working** — client HDR → stream_hdr |
-| 03 | Web UI session persist | **Working** — survives polaris restart |
-| 04 | Force SDR streams to NV12 | **Working** |
-| 05 | LINEAR BGRx/BGRA DMA-BUF → Vulkan→CUDA (`convert_path=vulkan_cuda`); sticky `mmap_cuda` fallback | **Working on lea** — 4K60 HDR livingroom, stable frames |
+Full topic tables: [polaris/README.md](polaris/README.md), [gamescope/README.md](gamescope/README.md).
+Living status / lea evidence: [STATUS.md](STATUS.md).
 
-### gamescope (`gamescope/`)
+## Host shape (lea)
 
-| # | Topic | Status |
-|---|--------|--------|
-| 01 | PipeWire HDR metadata | **Working** |
-| 02 | Headless HDR colorimetry | **Working** (with host force flags) |
-| 03 | Prefer DmaBuf | **Working** with polaris 01 |
-
-### Portal
-
-| # | Topic | Status |
-|---|--------|--------|
-| 01 | Fix stream size | **Working** |
-
-### Intentionally not applied
-
-- Archived portal GL/EGL experiments — portal LINEAR capture uses the Vulkan bridge in polaris 05; legacy KMS/Wayland GL→CUDA remains active
-- Gist experimental DmaBuf stack — superseded by polaris 01  
-- gamescope forced PQ ColorMgmt paint — wash regression  
-
-See [archived/README.md](archived/README.md), [STATUS.md](STATUS.md), GitHub issues #1–#4.
-
-## Known-good host shape (lea)
-
-- `capture = portal`, NVIDIA `adapter_name`, gamescope portal ScreenCast  
-- No `ENABLE_*_WSI` in session env  
-- Client profiles / Bigscreen apps for HDR vs forced SDR  
-- Open product work: [Gamescope Stream mode](https://github.com/luxus/polaris-hdr-linux-patches/issues/4) (UI label), color parity (#1)
+- `capture = portal`, pin NVIDIA for capture+CUDA+NVENC (`lib/polaris-nvidia-pin.sh`)
+- Hybrid systems: same GPU end-to-end; do not blacklist AMD as the fix
+- Session / deploy: consumer flake (luxusAi); this repo is the GitHub input tip
 
 ## License
 
