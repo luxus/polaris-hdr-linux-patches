@@ -119,6 +119,8 @@ stdenv'.mkDerivation (finalAttrs: {
     ../../polaris/03-web-ui-session-persist.patch
     # 04: non-HDR streams stay 8-bit NV12
     ../../polaris/04-sdr-force-8bit-encode.patch
+    # 06: sync polaris-hdr-force with enable_hdr + stream dynamicRange (no hybrid PQ+SDR)
+    ../../polaris/06-session-hdr-force-sync.patch
   ] ++ lib.optionals enablePortalDmabufLinear [
     # 05: LINEAR DmaBuf Vulkan→CUDA bridge; loud mmap_cuda fallback + stats
     ../../polaris/05-portal-dmabuf-vulkan-cuda.patch

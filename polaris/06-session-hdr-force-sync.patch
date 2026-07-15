@@ -1,0 +1,123 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: patch-rebuild <patches@local>
+Date: Wed, 15 Jul 2026 11:20:00 +0200
+Subject: [PATCH] topic6: sync polaris-hdr-force with session/stream HDR
+
+Avoid hybrid PQ capture + SDR encode.
+---
+--- a/src/process.cpp	2026-07-13 02:15:49.000000000 +0200
++++ b/src/process.cpp	2026-07-15 11:09:07.589126817 +0200
+@@ -2449,6 +2449,47 @@
+       launch_session->enable_hdr = *resolved_optimization.hdr;
+     }
+ 
++#ifdef __linux__
++    // Keep portal is_hdr/get_hdr_metadata gate aligned with session HDR intent.
++    // polaris-hdr-session also writes this file; doing it here covers Desktop /
++    // no-prep apps and client_profiles.hdr=false before encode starts.
++    {
++      const char *rt = std::getenv("XDG_RUNTIME_DIR");
++      if (rt && *rt) {
++        const auto force_path = std::filesystem::path(rt) / "polaris-hdr-force";
++        const auto nested_path = std::filesystem::path(rt) / "polaris-hdr-wsi-nested";
++        std::string prev;
++        {
++          std::ifstream in(force_path);
++          std::getline(in, prev);
++          while (!prev.empty() && (prev.back() == '\r' || prev.back() == '\n' || prev.back() == ' ')) {
++            prev.pop_back();
++          }
++        }
++        const std::string want = launch_session->enable_hdr ? "1" : "0";
++        {
++          std::ofstream out(force_path, std::ios::trunc);
++          out << want << '\n';
++        }
++        const bool prev_on = (prev == "1" || prev == "true");
++        const bool want_on = launch_session->enable_hdr;
++        if (prev_on != want_on) {
++          BOOST_LOG(info) << "portal HDR force -> "sv << want << " (was \""sv << prev
++                          << "\") from enable_hdr="sv << (want_on ? "true"sv : "false"sv);
++          // Nested WSI owns its gamescope child; idle restart would fight it.
++          if (!std::filesystem::exists(nested_path)) {
++            const int rc = std::system(
++              "systemctl --user try-restart polaris-hdr-idle.service >/dev/null 2>&1");
++            if (rc != 0) {
++              BOOST_LOG(debug) << "portal HDR force: idle try-restart rc="sv << rc
++                               << " (ok if unit absent / not portal session)"sv;
++            }
++          }
++        }
++      }
++    }
++#endif
++
+     if (resolved_optimization.virtual_display.has_value()) {
+       launch_session->virtual_display = *resolved_optimization.virtual_display;
+     }
+--- a/src/video.cpp	2026-07-13 02:15:49.000000000 +0200
++++ b/src/video.cpp	2026-07-15 11:09:07.601644314 +0200
+@@ -7,6 +7,7 @@
+ #include <atomic>
+ #include <bitset>
+ #include <cmath>
++#include <cstdlib>
+ #include <filesystem>
+ #include <fcntl.h>
+ #include <fstream>
+@@ -524,6 +525,55 @@
+ 
+     hdr_probe_t probe_display_hdr(platf::display_t &disp, const config_t &config) {
+       hdr_probe_t probe;
++
++#ifdef __linux__
++      // Stream dynamicRange is the encode truth. If the client asked SDR but the
++      // portal force file still claims HDR (leftover session / profile race),
++      // clear it and restart idle gamescope so capture is not PQ-shaped XB30
++      // while the bitstream is Rec.601 NV12 (iPhone/VoidLink teal/chroma mess).
++      {
++        const char *rt = std::getenv("XDG_RUNTIME_DIR");
++        if (rt && *rt) {
++          const auto force_path = std::filesystem::path(rt) / "polaris-hdr-force";
++          const auto nested_path = std::filesystem::path(rt) / "polaris-hdr-wsi-nested";
++          const bool want_on = config.dynamicRange > 0;
++          std::string prev;
++          {
++            std::ifstream in(force_path);
++            std::getline(in, prev);
++            while (!prev.empty() && (prev.back() == '\r' || prev.back() == '\n' || prev.back() == ' ')) {
++              prev.pop_back();
++            }
++          }
++          const bool prev_on = (prev == "1" || prev == "true");
++          const std::string want = want_on ? "1" : "0";
++          if (prev_on != want_on || prev.empty()) {
++            {
++              std::ofstream out(force_path, std::ios::trunc);
++              out << want << '\n';
++            }
++            if (prev_on != want_on) {
++              BOOST_LOG(info) << "portal HDR force -> "sv << want
++                              << " from stream dynamicRange="sv << config.dynamicRange
++                              << " (was \""sv << prev << "\")"sv;
++              if (!std::filesystem::exists(nested_path)) {
++                const int rc = std::system(
++                  "systemctl --user try-restart polaris-hdr-idle.service >/dev/null 2>&1");
++                if (rc == 0) {
++                  // Give headless gamescope a moment to rebind gamescope-0 / PW.
++                  std::this_thread::sleep_for(std::chrono::milliseconds(400));
++                } else {
++                  BOOST_LOG(debug) << "portal HDR force: idle try-restart rc="sv << rc;
++                }
++              } else {
++                BOOST_LOG(warning) << "portal HDR force changed under nested WSI; capture TF may stay hybrid until session restart"sv;
++              }
++            }
++          }
++        }
++      }
++#endif
++
+       probe.display_hdr = disp.is_hdr();
+ 
+       if (config.dynamicRange > 0 && probe.display_hdr) {

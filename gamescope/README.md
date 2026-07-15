@@ -15,8 +15,10 @@ Applied by `pkgs/gamescope-hdr` (nixpkgs gamescope + `enableWsi = true`).
 | Step | Change | Status |
 |------|--------|--------|
 | **A** | ColorMgmt LUTs on PW (`04`) | **active** (reds much better; slightly pale) |
-| **B** | `outputEncodingEOTF = HDR ? PQ : Gamma22` + nits/gamut postPatch | **active** (A+B) — retest pale/wash |
+| **B** | `outputEncodingEOTF = HDR ? PQ : Gamma22` + nits/gamut postPatch | **active** (A+B) — keep for TV/Mac HDR path (measured OK on livingroom/emily) |
 | archive | older gated ColorMgmt variant | `archived/gamescope/pipewire-color-mgmt.patch` |
+
+**PQ decision (2026-07-15):** leave A+B on. Do not strip B without a livingroom A/B; iPhone color is a client/hybrid issue, not a reason to drop PQ paint.
 
 ## Runtime (host)
 

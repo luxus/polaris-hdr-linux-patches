@@ -2,7 +2,9 @@
 
 | Date | State |
 |------|--------|
-| 2026-07-15 | **Host color polish (not iPhone rootcause)**: `02` Rec.2020 stub primaries exact (35400/14600, 8500/39850, 6550/2300 + D65). `05` P010 uses `new_color_vectors_from_colorspace` (10-bit code values) instead of UNORM+245/255. Gamescope Color A+B left as-is (user undecided on PQ). |
+| 2026-07-15 | **Hybrid true-SDR + PQ keep**: new `06` syncs `polaris-hdr-force` to `enable_hdr` + stream `dynamicRange` and try-restarts idle gamescope (skips nested WSI). Gamescope Color **A+B kept** (PQ paint for HDR TV/Mac). iPhone profile → `hdr:false` on host. |
+| 2026-07-15 | **Host color polish (not iPhone rootcause)**: `02` Rec.2020 stub primaries exact (35400/14600, 8500/39850, 6550/2300 + D65). `05` P010 uses `new_color_vectors_from_colorspace` (10-bit code values) instead of UNORM+245/255. |
+| 2026-07-15 | **Log spot-check**: emily HDR `spa_format=81` / `vulkan_cuda` `src_xb30=true dst_p010=true` / Rec.2020+PQ after polish. |
 | 2026-07-15 | **CUDA letterbox black fill**: `05` clears full Y/UV (Y=0, UV mid) before viewport convert — fixes green aspect-ratio bars on all clients. CUDA build OK; needs host switch to run. |
 | 2026-07-14 | **Color A+B (active)**: A = ColorMgmt LUTs (`04`); B = IceDOS `postPatch` (`outputEncodingEOTF=PQ` when HDR, pin sdrGamut=0 / nits=203). A alone: reds much better, slightly pale. Retest pale/wash with B. |
 | 2026-07-14 | **Color A result**: LUTs alone fixed oversaturated reds/torches (user: 10000× better); path still spa81/P010/`vulkan_cuda`. |
@@ -28,7 +30,7 @@ See [polaris/README.md](polaris/README.md), [gamescope/README.md](gamescope/READ
 
 | Package | Patches |
 |---------|---------|
-| polaris-stream | `01` portal · `02` HDR · `03` web · `04` force-8bit · `05` Vulkan→CUDA (on by default) |
+| polaris-stream | `01` portal · `02` HDR · `03` web · `04` force-8bit · `06` force-sync · `05` Vulkan→CUDA (on by default) |
 | gamescope-hdr | `01` PW HDR meta · `02` headless colorimetry · `03` prefer dmabuf · `04` ColorMgmt LUTs · postPatch EOTF_PQ |
 | xdg-desktop-portal-gamescope | `01` fix stream size |
 
