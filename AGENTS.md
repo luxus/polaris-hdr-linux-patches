@@ -55,6 +55,8 @@ nix build --no-link --impure --expr 'let f = builtins.getFlake ("path:" + toStri
 
 **Default:** after any change that should run on lea (`pkgs/*`, active patches, gamescope Color path, or coupled luxusAi session wiring), **deploy — do not stop at build/check.** User preference: always switch unless they explicitly say repo-only / no switch.
 
+**Long builds:** parent may launch async subagent `lea-build-deploy` (`~/.pi/agent/agents/lea-build-deploy.md`, interactive Herdr tab) for `nix build` / `nh os switch` / unit restart so the chat stays free. Give it a self-contained task (cwd, exact steps, push or not, verify). Do not re-do the same deploy in the parent while it runs.
+
 Consumer flake is **luxusAi** (`NH_FLAKE` / `~/projects/luxusAi`). It consumes this repo as `github:luxus/polaris-hdr-linux-patches` (not a path input). Session scripts live in luxusAi (`modules/nixos/polaris-hdr-session.nix`).
 
 ```bash
