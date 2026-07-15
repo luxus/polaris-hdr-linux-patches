@@ -4,6 +4,7 @@
 
 | Item | State |
 |------|--------|
+| **Deploy lea** | `d4e5557` → luxusAi lock; `nh os switch` **gen 403**; polaris `/nix/store/3gj4z581…-polaris-stream-…`; units restarted (portal + nvenc OK) |
 | Capture/encode | portal DmaBuf → `vulkan_cuda` (sticky `mmap_cuda` fallback); HDR = XB30/P010 + Rec.2020/PQ; SDR = 8-bit/NV12 |
 | Gamescope color | **A+B** always: ColorMgmt LUTs (`04`) + `EOTF_PQ` when HDR (`postPatch`) |
 | WSI | **`enableWsi = true` always** (layer built). Attach path has been flaky historically; nested WSI is the working presentation path when needed. Still never inject `ENABLE_*_WSI` into plain attach/Proton env “for capture” |
