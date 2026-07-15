@@ -51,7 +51,7 @@ diff --git a/src/platform/linux/cuda.cpp b/src/platform/linux/cuda.cpp
  
    void pass_error(const std::string_view &sv, const char *name, const char *description) {
      BOOST_LOG(error) << sv << name << ':' << description;
-@@ -593,6 +602,879 @@
+@@ -593,6 +602,883 @@
      int offset_x, offset_y;
    };
  
@@ -816,6 +816,10 @@ diff --git a/src/platform/linux/cuda.cpp b/src/platform/linux/cuda.cpp
 +      if (result) {
 +        return result;
 +      }
++      // Ensure fill+convert kernels finish before NVENC samples the CUDA frame.
++      if (check(cdf->cuStreamSynchronize(stream.get()), "Couldn't synchronize CUDA stream after convert: "sv)) {
++        return -1;
++      }
 +      const auto fmt = dst_p010 ? platf::frame_format_e::p010 : platf::frame_format_e::bgra8;
 +      stream_stats::update_encode_path_metadata(
 +        "vulkan_cuda",
@@ -1124,7 +1128,7 @@ diff --git a/src/platform/linux/cuda.cu b/src/platform/linux/cuda.cu
      // Ensure aspect ratio is maintained
      auto scalar = std::fminf(out_width / (float) in_width, out_height / (float) in_height);
      auto out_width_f = in_width * scalar;
-@@ -314,24 +463,57 @@
+@@ -314,24 +463,60 @@
      return std::make_optional<sws_t>(in_width, in_height, out_width, out_height, pitch, props.maxThreadsPerMultiProcessor / props.maxBlocksPerMultiProcessor, std::move(ptr));
    }
  
@@ -1136,9 +1140,12 @@ diff --git a/src/platform/linux/cuda.cu b/src/platform/linux/cuda.cu
  
 -  int sws_t::convert(std::uint8_t *Y, std::uint8_t *UV, std::uint32_t pitchY, std::uint32_t pitchUV, cudaTextureObject_t texture, stream_t::pointer stream, const viewport_t &viewport) {
 +  int sws_t::convert(std::uint8_t *Y, std::uint8_t *UV, std::uint32_t pitchY, std::uint32_t pitchUV, cudaTextureObject_t texture, stream_t::pointer stream, const viewport_t &viewport, bool dst_p010, bool src_xb30) {
-+    // Clear full frame to black first. The color kernels only write the letterboxed
-+    // content viewport; uninitialized padding shows as green bars on clients.
-+    if (Y && UV && frame_width > 0 && frame_height > 0) {
++    // Clear padding only when letterboxed. Full-frame clear every frame races NVENC
++    // (black flashes / flicker). Same-size viewport: content kernels cover everything.
++    const bool letterbox = frame_width > 0 && frame_height > 0 &&
++      (viewport.offsetX != 0 || viewport.offsetY != 0 ||
++       viewport.width != frame_width || viewport.height != frame_height);
++    if (Y && UV && letterbox) {
 +      dim3 fill_block(16, 16);
 +      dim3 fill_grid(div_align(frame_width, int(fill_block.x)), div_align(frame_height, int(fill_block.y)));
 +      fill_yuv_black<<<fill_grid, fill_block, 0, stream>>>(

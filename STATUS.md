@@ -2,6 +2,7 @@
 
 | Date | State |
 |------|--------|
+| 2026-07-15 | **Fix flicker v2**: letterbox fill only when needed + CUDA sync after convert; `06` force write only from `enable_hdr` (no probe flips). |
 | 2026-07-15 | **Fix flicker**: `06` no longer `systemctl try-restart` idle — encoder probes flipped force 0↔1 and thrash-restarted gamescope (stream flicker + polaris core-dump). Force file write only; session owns restart. |
 | 2026-07-15 | **Deployed lea**: `nh os switch` gen after patches `d48b738` (06 force-sync). polaris+idle restarted. iPhone profile `hdr:false` on host. |
 | 2026-07-15 | **Hybrid true-SDR + PQ keep**: new `06` syncs `polaris-hdr-force` to `enable_hdr` + stream `dynamicRange` and try-restarts idle gamescope (skips nested WSI). Gamescope Color **A+B kept** (PQ paint for HDR TV/Mac). iPhone profile → `hdr:false` on host. |
