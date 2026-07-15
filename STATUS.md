@@ -2,6 +2,8 @@
 
 | Date | State |
 |------|--------|
+| 2026-07-15 | **Host color polish (not iPhone rootcause)**: `02` Rec.2020 stub primaries exact (35400/14600, 8500/39850, 6550/2300 + D65). `05` P010 uses `new_color_vectors_from_colorspace` (10-bit code values) instead of UNORM+245/255. Gamescope Color A+B left as-is (user undecided on PQ). |
+| 2026-07-15 | **CUDA letterbox black fill**: `05` clears full Y/UV (Y=0, UV mid) before viewport convert — fixes green aspect-ratio bars on all clients. CUDA build OK; needs host switch to run. |
 | 2026-07-14 | **Color A+B (active)**: A = ColorMgmt LUTs (`04`); B = IceDOS `postPatch` (`outputEncodingEOTF=PQ` when HDR, pin sdrGamut=0 / nits=203). A alone: reds much better, slightly pale. Retest pale/wash with B. |
 | 2026-07-14 | **Color A result**: LUTs alone fixed oversaturated reds/torches (user: 10000× better); path still spa81/P010/`vulkan_cuda`. |
 | 2026-07-14 | **Polaris nested WSI + HDR + P010 green (lea)**: BP session `POLARIS_GAMESCOPE_WSI=1` → BG3 (`1086940`) under nested gamescope; portal `spa_format=81` / `xBGR_210LE` → `vulkan_cuda` `src_xb30=true` **`dst_p010=true`**; Rec.2020+PQ 10-bit; user picture OK in HDR |
@@ -45,6 +47,19 @@ See [polaris/README.md](polaris/README.md), [gamescope/README.md](gamescope/READ
 | [#3](https://github.com/luxus/polaris-hdr-linux-patches/issues/3) | Web UI preview + path/mode clarity |
 | [#4](https://github.com/luxus/polaris-hdr-linux-patches/issues/4) | Stream mode: Gamescope Stream peer of Private Stream |
 | [#6](https://github.com/luxus/polaris-hdr-linux-patches/issues/6) | Gamescope **WSI nested** polish — desktop AC6 + Polaris BP→BG3 WSI+HDR+P010 proven 2026-07-14; remaining = session packaging/docs, not capture stack |
+
+## 2026-07-15 — iPhone / VoidLink teal–magenta colors (handoff)
+
+**Not a host-global color regression.** Mac + livingroom OK on portal/gamescope HDR; iPhone wrong; **same iPhone OK on labwc SDR H.264**.
+
+Full write-up: [`docs/handoff-iphone-color-2026-07-15.md`](docs/handoff-iphone-color-2026-07-15.md)
+
+| Control | Path | iPhone colors |
+|---------|------|---------------|
+| BAD | gamescope → portal → `vulkan_cuda` XB30→P010 → HEVC Main10 HDR PQ | teal/magenta |
+| GOOD | labwc cage → wlr bgra8 → H.264 SDR Rec.601 | correct |
+
+Ruled out for this bug: color_range 0/1/2, `hevc_mode=3` alone, HEVC vs AV1. Do not re-cap `max_bitrate` without explicit ask (agent experiment, not baseline).
 
 **Closed (2026-07-14):** [#1](https://github.com/luxus/polaris-hdr-linux-patches/issues/1) HDR color · [#2](https://github.com/luxus/polaris-hdr-linux-patches/issues/2) DMA-BUF · [#5](https://github.com/luxus/polaris-hdr-linux-patches/issues/5) Vulkan→CUDA
 

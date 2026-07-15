@@ -1,8 +1,7 @@
 diff --git a/cmake/compile_definitions/linux.cmake b/cmake/compile_definitions/linux.cmake
-index 02e184f..b5ce4a4 100644
 --- a/cmake/compile_definitions/linux.cmake
 +++ b/cmake/compile_definitions/linux.cmake
-@@ -113,7 +113,9 @@ if(${POLARIS_ENABLE_CUDA})
+@@ -113,7 +113,9 @@
      endif()
  endif()
  if(CUDA_FOUND)
@@ -13,7 +12,6 @@ index 02e184f..b5ce4a4 100644
              "${CMAKE_SOURCE_DIR}/src/platform/linux/cuda.h"
              "${CMAKE_SOURCE_DIR}/src/platform/linux/cuda.cu"
 diff --git a/src/platform/linux/cuda.cpp b/src/platform/linux/cuda.cpp
-index 82384af..62f028d 100644
 --- a/src/platform/linux/cuda.cpp
 +++ b/src/platform/linux/cuda.cpp
 @@ -5,13 +5,20 @@
@@ -37,7 +35,7 @@ index 82384af..62f028d 100644
  
  extern "C" {
  #include <libavcodec/avcodec.h>
-@@ -24,6 +31,7 @@ extern "C" {
+@@ -24,6 +31,7 @@
  #include "graphics.h"
  #include "src/config.h"
  #include "src/logging.h"
@@ -45,7 +43,7 @@ index 82384af..62f028d 100644
  #include "src/utility.h"
  #include "src/video.h"
  #include "wayland.h"
-@@ -45,6 +53,7 @@ using namespace std::literals;
+@@ -45,6 +53,7 @@
  namespace cuda {
    constexpr auto cudaDevAttrMaxThreadsPerBlock = (CUdevice_attribute) 1;
    constexpr auto cudaDevAttrMaxThreadsPerMultiProcessor = (CUdevice_attribute) 39;
@@ -53,7 +51,7 @@ index 82384af..62f028d 100644
  
    void pass_error(const std::string_view &sv, const char *name, const char *description) {
      BOOST_LOG(error) << sv << name << ':' << description;
-@@ -593,6 +602,879 @@ namespace cuda {
+@@ -593,6 +602,879 @@
      int offset_x, offset_y;
    };
  
@@ -933,7 +931,7 @@ index 82384af..62f028d 100644
    std::unique_ptr<platf::avcodec_encode_device_t> make_avcodec_encode_device(int width, int height, bool vram) {
      if (init()) {
        return nullptr;
-@@ -635,6 +1517,22 @@ namespace cuda {
+@@ -635,6 +1517,22 @@
      return cuda;
    }
  
@@ -957,10 +955,9 @@ index 82384af..62f028d 100644
      static PNVFBCCREATEINSTANCE createInstance {};
      static NVFBC_API_FUNCTION_LIST func {NVFBC_VERSION};
 diff --git a/src/platform/linux/cuda.cu b/src/platform/linux/cuda.cu
-index a0c0e11..b4c03d6 100644
 --- a/src/platform/linux/cuda.cu
 +++ b/src/platform/linux/cuda.cu
-@@ -206,6 +206,116 @@ namespace cuda {
+@@ -206,6 +206,116 @@
      dstY1[1] = calcY(rgb_rb, color_matrix) * 245.0f;  // 245.0f is a magic number to ensure slight changes in luminosity are more visible
    }
  
@@ -1023,19 +1020,19 @@ index a0c0e11..b4c03d6 100644
 +    float2 uv_rb = calcUV(rgb_rb, color_matrix);
 +    float2 uv = (uv_lt + uv_lb + uv_rt + uv_rb) * 0.25f;
 +
-+    auto to_p010 = [](float v) -> std::uint16_t {
-+      // left-aligned 10-bit in 16-bit word (FFmpeg P010LE)
-+      int q = int(v * 1023.0f + 0.5f);
++    // color_matrix is new_color_vectors (bit_depth>=10): calcY/UV already 10-bit code values.
++    // Pack as P010LE left-aligned (code << 6). Do not reuse 8-bit UNORM *245/*1023 hacks.
++    auto to_p010 = [](float code) -> std::uint16_t {
++      int q = int(code);  // vectors bake +0.5 into the additive term
 +      if (q < 0) q = 0;
 +      if (q > 1023) q = 1023;
 +      return std::uint16_t(q << 6);
 +    };
 +
-+    // Match 8-bit path's slight Y scale (245/255) for continuity.
-+    dstY0[0] = to_p010(calcY(rgb_lt, color_matrix) * (245.0f / 255.0f));
-+    dstY0[1] = to_p010(calcY(rgb_rt, color_matrix) * (245.0f / 255.0f));
-+    dstY1[0] = to_p010(calcY(rgb_lb, color_matrix) * (245.0f / 255.0f));
-+    dstY1[1] = to_p010(calcY(rgb_rb, color_matrix) * (245.0f / 255.0f));
++    dstY0[0] = to_p010(calcY(rgb_lt, color_matrix));
++    dstY0[1] = to_p010(calcY(rgb_rt, color_matrix));
++    dstY1[0] = to_p010(calcY(rgb_lb, color_matrix));
++    dstY1[1] = to_p010(calcY(rgb_rb, color_matrix));
 +    dstUV_row[0] = to_p010(uv.x);
 +    dstUV_row[1] = to_p010(uv.y);
 +  }
@@ -1077,7 +1074,57 @@ index a0c0e11..b4c03d6 100644
    int tex_t::copy(std::uint8_t *src, int height, int pitch) {
      CU_CHECK(cudaMemcpy2DToArray(array, 0, 0, src, pitch, pitch, height, cudaMemcpyDeviceToDevice), "Couldn't copy to cuda array from deviceptr");
  
-@@ -314,17 +424,35 @@ namespace cuda {
+@@ -279,9 +389,48 @@
+     }
+   }
+ 
++
++  // Fill full NV12/P010 planes with true black so letterbox/pillarbox is not green garbage.
++  // Y=0; UV mid (0x80 8-bit / 0x8000 left-aligned 10-bit). Content viewport is written after.
++  __global__ void fill_yuv_black(
++    std::uint8_t *Y,
++    std::uint8_t *UV,
++    std::uint32_t pitchY,
++    std::uint32_t pitchUV,
++    int width,
++    int height,
++    int p010
++  ) {
++    int x = int(blockIdx.x * blockDim.x + threadIdx.x);
++    int y = int(blockIdx.y * blockDim.y + threadIdx.y);
++    if (x >= width || y >= height) {
++      return;
++    }
++
++    if (p010) {
++      auto *y_row = reinterpret_cast<std::uint16_t *>(Y + y * pitchY);
++      y_row[x] = 0;
++      if ((y & 1) == 0 && (x & 1) == 0) {
++        auto *uv_row = reinterpret_cast<std::uint16_t *>(UV + (y / 2) * pitchUV);
++        // Neutral chroma mid for 10-bit left-aligned in uint16 (512 << 6).
++        uv_row[x] = 0x8000;
++        uv_row[x + 1] = 0x8000;
++      }
++    }
++    else {
++      Y[y * pitchY + x] = 0;
++      if ((y & 1) == 0 && (x & 1) == 0) {
++        UV[(y / 2) * pitchUV + x] = 0x80;
++        UV[(y / 2) * pitchUV + x + 1] = 0x80;
++      }
++    }
++  }
++
+   sws_t::sws_t(int in_width, int in_height, int out_width, int out_height, int pitch, int threadsPerBlock, ptr_t &&color_matrix):
+       threadsPerBlock {threadsPerBlock},
+-      color_matrix {std::move(color_matrix)} {
++      color_matrix {std::move(color_matrix)},
++      frame_width {out_width},
++      frame_height {out_height} {
+     // Ensure aspect ratio is maintained
+     auto scalar = std::fminf(out_width / (float) in_width, out_height / (float) in_height);
+     auto out_width_f = in_width * scalar;
+@@ -314,24 +463,57 @@
      return std::make_optional<sws_t>(in_width, in_height, out_width, out_height, pitch, props.maxThreadsPerMultiProcessor / props.maxBlocksPerMultiProcessor, std::move(ptr));
    }
  
@@ -1089,6 +1136,18 @@ index a0c0e11..b4c03d6 100644
  
 -  int sws_t::convert(std::uint8_t *Y, std::uint8_t *UV, std::uint32_t pitchY, std::uint32_t pitchUV, cudaTextureObject_t texture, stream_t::pointer stream, const viewport_t &viewport) {
 +  int sws_t::convert(std::uint8_t *Y, std::uint8_t *UV, std::uint32_t pitchY, std::uint32_t pitchUV, cudaTextureObject_t texture, stream_t::pointer stream, const viewport_t &viewport, bool dst_p010, bool src_xb30) {
++    // Clear full frame to black first. The color kernels only write the letterboxed
++    // content viewport; uninitialized padding shows as green bars on clients.
++    if (Y && UV && frame_width > 0 && frame_height > 0) {
++      dim3 fill_block(16, 16);
++      dim3 fill_grid(div_align(frame_width, int(fill_block.x)), div_align(frame_height, int(fill_block.y)));
++      fill_yuv_black<<<fill_grid, fill_block, 0, stream>>>(
++        Y, UV, pitchY, pitchUV, frame_width, frame_height, dst_p010 ? 1 : 0);
++      if (CU_CHECK_IGNORE(cudaGetLastError(), "fill_yuv_black failed")) {
++        return -1;
++      }
++    }
++
      int threadsX = viewport.width / 2;
      int threadsY = viewport.height / 2;
  
@@ -1112,12 +1171,22 @@ index a0c0e11..b4c03d6 100644
 +      return CU_CHECK_IGNORE(cudaGetLastError(), "RGBA_to_P010 failed");
 +    }
 +
-+    // NV12 path expects normalized float4 BGRA texture (8-bit).
++    // NV12 path: legacy UNORM color_vectors + *245/*256 (apply_colorspace bit_depth < 10).
      RGBA_to_NV12<<<grid, block, 0, stream>>>(texture, Y, UV, pitchY, pitchUV, scale, viewport, (cuda_color_t *) color_matrix.get());
  
      return CU_CHECK_IGNORE(cudaGetLastError(), "RGBA_to_NV12 failed");
+   }
+ 
+   void sws_t::apply_colorspace(const video::sunshine_colorspace_t &colorspace) {
+-    auto color_p = video::color_vectors_from_colorspace(colorspace);
++    // P010/10-bit: H.273 code-value vectors. NV12/8-bit: legacy UNORM for *245/*256 kernels.
++    const auto *color_p = colorspace.bit_depth >= 10
++      ? video::new_color_vectors_from_colorspace(colorspace)
++      : video::color_vectors_from_colorspace(colorspace);
+     CU_CHECK_IGNORE(cudaMemcpy(color_matrix.get(), color_p, sizeof(video::color_t), cudaMemcpyHostToDevice), "Couldn't copy color matrix to cuda");
+   }
+ 
 diff --git a/src/platform/linux/cuda.h b/src/platform/linux/cuda.h
-index cb77e41..ca31528 100644
 --- a/src/platform/linux/cuda.h
 +++ b/src/platform/linux/cuda.h
 @@ -6,6 +6,7 @@
@@ -1128,7 +1197,7 @@ index cb77e41..ca31528 100644
    #include <cstdint>
    #include <memory>
    #include <optional>
-@@ -38,6 +39,8 @@ namespace cuda {
+@@ -38,6 +39,8 @@
     */
    std::unique_ptr<platf::avcodec_encode_device_t> make_avcodec_gl_encode_device(int width, int height, int offset_x, int offset_y);
  
@@ -1137,7 +1206,7 @@ index cb77e41..ca31528 100644
    int init();
  }  // namespace cuda
  
-@@ -94,6 +97,9 @@ namespace cuda {
+@@ -94,6 +97,9 @@
      } texture;
    };
  
@@ -1147,7 +1216,7 @@ index cb77e41..ca31528 100644
    class sws_t {
    public:
      sws_t() = default;
-@@ -108,8 +114,8 @@ namespace cuda {
+@@ -108,8 +114,8 @@
      static std::optional<sws_t> make(int in_width, int in_height, int out_width, int out_height, int pitch);
  
      // Converts loaded image into a CUDevicePtr
@@ -1158,8 +1227,18 @@ index cb77e41..ca31528 100644
  
      void apply_colorspace(const video::sunshine_colorspace_t &colorspace);
  
+@@ -121,6 +127,10 @@
+ 
+     viewport_t viewport;
+ 
++    // Full destination frame size (letterbox/pillarbox padding is outside viewport).
++    int frame_width = 0;
++    int frame_height = 0;
++
+     float scale;
+   };
+ }  // namespace cuda
 diff --git a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewire_capture.cpp
-index 441a26d..76e1fd9 100644
 --- a/src/platform/linux/pipewire_capture.cpp
 +++ b/src/platform/linux/pipewire_capture.cpp
 @@ -7,6 +7,7 @@
@@ -1170,7 +1249,7 @@ index 441a26d..76e1fd9 100644
  #include <cerrno>
  #include <cctype>
  #include <cstring>
-@@ -776,12 +777,16 @@ namespace pipewire_capture {
+@@ -776,12 +777,16 @@
          return false;
        }
  
@@ -1188,7 +1267,7 @@ index 441a26d..76e1fd9 100644
          .plane_count = buffer->buffer->n_datas,
        };
        if (frame.plane_count > frame.planes.size()) {
-@@ -888,32 +893,35 @@ namespace pipewire_capture {
+@@ -888,32 +893,35 @@
        cap->set_terminal(wait_result_e::reinit);
        return;
      }
@@ -1232,7 +1311,7 @@ index 441a26d..76e1fd9 100644
      }
  
      pw_buffer *replaced_buffer = nullptr;
-@@ -932,7 +940,8 @@ namespace pipewire_capture {
+@@ -932,7 +940,8 @@
          .height = height,
          .stride = width * 4,
          .spa_format = raw_info.format,
@@ -1243,10 +1322,9 @@ index 441a26d..76e1fd9 100644
        cap->front_frame_.clear();
        cap->back_frame_.clear();
 diff --git a/src/platform/linux/portal_grab.cpp b/src/platform/linux/portal_grab.cpp
-index a03308e..fedc911 100644
 --- a/src/platform/linux/portal_grab.cpp
 +++ b/src/platform/linux/portal_grab.cpp
-@@ -984,19 +984,30 @@ namespace portal {
+@@ -984,19 +984,30 @@
      } else if (mem_type != platf::mem_type_e::vaapi && mem_type != platf::mem_type_e::cuda) {
        BOOST_LOG(info) << "portal: DMA-BUF disabled because encoder memory type is not VAAPI or CUDA"sv;
      } else {
@@ -1287,7 +1365,7 @@ index a03308e..fedc911 100644
        const bool has_xb30_linear = std::any_of(dmabuf_formats.begin(), dmabuf_formats.end(), [](const auto &f) {
          return f.spa_format == SPA_VIDEO_FORMAT_xBGR_210LE && f.modifier == DRM_FORMAT_MOD_LINEAR;
        });
-@@ -1015,7 +1026,7 @@ namespace portal {
+@@ -1015,7 +1026,7 @@
        };
        may_use_dmabuf = pipewire_capture::may_offer_dmabuf(eligibility);
        if (!may_use_dmabuf) {
@@ -1296,7 +1374,7 @@ index a03308e..fedc911 100644
                          << *encoder_render_node << ']';
        }
      }
-@@ -1315,12 +1326,8 @@ namespace portal {
+@@ -1315,12 +1326,8 @@
        img->dmabuf_buffer_key = 0;
        img->sd = {};
        std::fill_n(img->sd.fds, 4, -1);
@@ -1311,7 +1389,7 @@ index a03308e..fedc911 100644
  
        BOOST_LOG(info) << "portal: alloc_img "sv << img->width << "x"sv << img->height
                        << " env="sv << this->env_width << "x"sv << this->env_height;
-@@ -1362,11 +1369,9 @@ namespace portal {
+@@ -1362,11 +1369,9 @@
  #ifdef POLARIS_BUILD_CUDA
        if (mem_type == platf::mem_type_e::cuda) {
          if (pipewire_dmabuf_negotiated) {
@@ -1325,10 +1403,9 @@ index a03308e..fedc911 100644
          if (device) {
            device->prefer_8bit_encode = true;
 diff --git a/src/stream_stats.cpp b/src/stream_stats.cpp
-index 1e44bb6..30ab909 100644
 --- a/src/stream_stats.cpp
 +++ b/src/stream_stats.cpp
-@@ -155,6 +155,7 @@ namespace stream_stats {
+@@ -155,6 +155,7 @@
      j["encode_target_device"] = encode_target_device;
      j["encode_target_residency"] = platf::from_frame_residency(encode_target_residency);
      j["encode_target_format"] = platf::from_frame_format(encode_target_format);

@@ -4,14 +4,14 @@ Date: Mon, 13 Jul 2026 22:21:40 +0200
 Subject: [PATCH] topic2: portal hdr metadata + force gate
 
 ---
- src/platform/linux/portal_grab.cpp | 39 ++++++++++++++++++++++++++++++
- 1 file changed, 39 insertions(+)
+ src/platform/linux/portal_grab.cpp | 40 ++++++++++++++++++++++++++++++
+ 1 file changed, 40 insertions(+)
 
 diff --git a/src/platform/linux/portal_grab.cpp b/src/platform/linux/portal_grab.cpp
 index b585f5a..468e38f 100644
 --- a/src/platform/linux/portal_grab.cpp
 +++ b/src/platform/linux/portal_grab.cpp
-@@ -1136,6 +1136,45 @@ namespace portal {
+@@ -1136,6 +1136,46 @@ namespace portal {
        return 0;
      }
  
@@ -42,11 +42,12 @@ index b585f5a..468e38f 100644
 +        return false;
 +      }
 +      std::memset(&metadata, 0, sizeof(metadata));
-+      // Normalized to 50_000 (see SS_HDR_METADATA). Rec.2020 + D65.
-+      metadata.displayPrimaries[0] = {34000, 16000};
-+      metadata.displayPrimaries[1] = {13250, 34500};
-+      metadata.displayPrimaries[2] = {7500, 3000};
-+      metadata.whitePoint = {15635, 16450};
++      // SS_HDR_METADATA: CIE xy * 50_000, RGB order (Limelight.h).
++      // Rec. ITU-R BT.2020-2 primaries + D65 white.
++      metadata.displayPrimaries[0] = {35400, 14600};  // R 0.708, 0.292
++      metadata.displayPrimaries[1] = {8500, 39850};  // G 0.170, 0.797
++      metadata.displayPrimaries[2] = {6550, 2300};  // B 0.131, 0.046
++      metadata.whitePoint = {15635, 16450};  // D65 0.3127, 0.3290
 +      metadata.maxDisplayLuminance = 1000;
 +      metadata.minDisplayLuminance = 1;
 +      metadata.maxContentLightLevel = 1000;
