@@ -5,6 +5,7 @@
 | Item | State |
 |------|--------|
 | **Polaris pin** | master `ba166ef` (2026-07-16); drop local `03` (upstream webui persist); active `01`–`02`,`04`–`08` |
+| **Deploy lea** | `95238f0` → gen **411**; polaris `0-unstable-2026-07-16` store `z40r88jk…`; portal bus + Avahi lea OK |
 | **Patch 08** | `POLARIS_PORTAL_DBUS_ADDRESS` → ScreenCast-only private bus; process session bus keeps Avahi/tray (KRDP coexistence path) |
 | **Deploy lea** | `d4e5557` → luxusAi lock; `nh os switch` **gen 403**; polaris `/nix/store/3gj4z581…-polaris-stream-…`; units restarted (portal + nvenc OK) |
 | Capture/encode | portal DmaBuf → `vulkan_cuda` (sticky `mmap_cuda` fallback); HDR = XB30/P010 + Rec.2020/PQ; SDR = 8-bit/NV12 |
