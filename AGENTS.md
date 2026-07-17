@@ -10,8 +10,9 @@
 
 ## Active patch boundaries
 
-- Polaris `01`–`02`, `04`, `06`–`08` are always applied; `05-portal-dmabuf-vulkan-cuda.patch` is enabled by default through `enablePortalDmabufLinear`. Web UI session persist is upstream (no local `03`).
-- Keep the Polaris topics separate: `01` portal/PipeWire capture, `02` HDR metadata and force gate, `04` SDR 8-bit encode, `05` portal Vulkan-to-CUDA conversion, `06` write `polaris-hdr-force` only (never restart gamescope from encode probe), `07` device_db hdr_capable ≠ force enable_hdr, `08` `POLARIS_PORTAL_DBUS_ADDRESS` ScreenCast-only bus (session bus for Avahi/tray).
+- Polaris patches are **phase-gated** (see `polaris/README.md`): phase1 portal/SHM, phase2 Vulkan→CUDA, phase4 HDR alignment, optional private ScreenCast bus. Defaults all on → same as full stack. Web UI session persist is upstream (no local web patch).
+- Keep topics separate: phase1 PipeWire portal + SHM, phase2 LINEAR DmaBuf Vulkan→CUDA, phase4 HDR metadata/force/SDR/device_db, optional `POLARIS_PORTAL_DBUS_ADDRESS`. Phase 3 (Gamescope Stream ownership) is host/session wiring, not this package.
+- Step packages: `polaris-stream-phase1`, `…-phase1-2`, `…-phase1-2-4`, full `polaris-stream`. When upstream lands a phase, disable that flag and rebase remaining patches.
 - Gamescope applies `01` HDR PipeWire metadata, `02` headless HDR colorimetry, `03` prefer-DMA-BUF, plus Color **A+B** (ColorMgmt LUTs + `EOTF_PQ` when HDR) in `pkgs/gamescope-hdr`. The portal package applies only its stream-size patch.
 - Patch formats in this repository are mixed. Preserve the surrounding format and avoid whole-file regeneration unless intentionally rebuilding a topic against its pinned upstream revision.
 - When changing an upstream pin, update all coupled revision/version/hash fields and regenerate or rebase every affected active patch. A patch applying with fuzz is not sufficient verification.

@@ -11,7 +11,8 @@ services, and runtime force files. **`archived/` is never applied.**
 
 | Output | What |
 |--------|------|
-| `packages.<sys>.polaris-stream` | Polaris + `01`–`04`,`06`,`07` always; `05` Vulkan→CUDA default on |
+| `packages.<sys>.polaris-stream` | Full phase stack (1+2+4+optional bus) |
+| `…-phase1` / `…-phase1-2` / `…-phase1-2-4` | Step builds to A/B as upstream phases land |
 | `packages.<sys>.gamescope-hdr` | gamescope + HDR PW + prefer-dmabuf + Color **A+B** + **WSI built** |
 | `packages.<sys>.xdg-desktop-portal-gamescope` | Jovian portal + stream-size fix |
 | `packages.<sys>.polaris-nvidia-pin` | Hybrid-GPU pin shell snippet |
@@ -35,7 +36,7 @@ nix build .#xdg-desktop-portal-gamescope
 
 ```
 flake.nix / pkgs/          wired packages (source of truth for what applies)
-polaris/                   01–07 topic patches
+polaris/                   phase1 / phase2 / phase4 / optional bus patches
 gamescope/                 01–04 + Color B via postPatch in package
 xdg-desktop-portal-gamescope/
 lib/                       polaris-nvidia-pin.sh

@@ -70,11 +70,24 @@
   cudaSupport ? config.cudaSupport,
   cudaPackages ? { },
   enableBrowserStream ? true,
-  # Portal LINEAR DmaBuf Vulkan→CUDA bridge with loud mmap_cuda fallback. Default on.
-  enablePortalDmabufLinear ? true,
+  # Upstream-aligned phases (see polaris/README.md). Disable a phase when that
+  # code lands on polaris main and drop the corresponding patch after rebase.
+  # Phase 1: Portal/PipeWire + reliable SHM/MemFd (capture_transport=shm).
+  enablePhase1Portal ? true,
+  # Phase 2: LINEAR DmaBuf → Vulkan → CUDA (vulkan_cuda); sticky mmap_cuda fallback.
+  enablePhase2VulkanCuda ? true,
+  # Phase 4: HDR request/metadata/force alignment (not hybrid PQ+SDR).
+  enablePhase4Hdr ? true,
+  # Optional: ScreenCast on private bus (POLARIS_PORTAL_DBUS_ADDRESS) for KDE/KRDP coexistence.
+  enablePortalPrivateBus ? true,
+  # Back-compat alias for enablePhase2VulkanCuda.
+  enablePortalDmabufLinear ? null,
 }:
 let
   stdenv' = if cudaSupport then cudaPackages.backendStdenv else stdenv;
+  # Legacy flag wins only if explicitly set (non-null).
+  phase2VulkanCuda =
+    if enablePortalDmabufLinear == null then enablePhase2VulkanCuda else enablePortalDmabufLinear;
 
   buildDepsTag = "v2026.516.30821";
   ffmpegArch =
@@ -96,6 +109,8 @@ let
 
 in
 assert stdenv.hostPlatform.isLinux;
+assert (!phase2VulkanCuda || enablePhase1Portal);
+assert (!enablePortalPrivateBus || enablePhase1Portal);
 stdenv'.mkDerivation (finalAttrs: {
   pname = "polaris-stream";
   # master + topic patches under ../../polaris/ (see polaris/README.md).
@@ -110,24 +125,29 @@ stdenv'.mkDerivation (finalAttrs: {
     fetchSubmodules = true;
   };
 
-  patches = [
-    # 01: #152 PipeWire portal + same-GPU eligibility + SHM CUDA + diag + xBGR_210LE (no 0014)
-    ../../polaris/01-portal-pipewire-dmabuf.patch
-    # 02: portal HDR10 metadata + polaris-hdr-force gate
-    ../../polaris/02-portal-hdr-metadata.patch
-    # 03 removed: upstream ba166ef+ persists web UI sessions
-    # 04: non-HDR streams stay 8-bit NV12
-    ../../polaris/04-sdr-force-8bit-encode.patch
-    # 06: write polaris-hdr-force from enable_hdr only (session owns gamescope restart)
-    ../../polaris/06-session-hdr-force-sync.patch
-    # 07: device_db hdr_capable must not force enable_hdr (hybrid XB30+SDR on tablets)
-    ../../polaris/07-device-db-hdr-not-request.patch
-    # 08: optional private bus for ScreenCast only (POLARIS_PORTAL_DBUS_ADDRESS)
-    ../../polaris/08-portal-private-bus.patch
-  ] ++ lib.optionals enablePortalDmabufLinear [
-    # 05: LINEAR DmaBuf Vulkan→CUDA bridge; loud mmap_cuda fallback + stats
-    ../../polaris/05-portal-dmabuf-vulkan-cuda.patch
-  ];
+  # Phase 3 (Gamescope Stream ownership) is host/session wiring, not these patches.
+  # Apply order must stay: phase1 → phase4 portal_grab/video/process → optional bus → phase2
+  # (phase2 was historically last; rebase only against this order).
+  patches =
+    lib.optionals enablePhase1Portal [
+      # Phase 1: Portal/PipeWire + SHM/MemFd fallback + diag (+ same-GPU DmaBuf offer)
+      ../../polaris/phase1-portal-pipewire-shm.patch
+    ]
+    ++ lib.optionals enablePhase4Hdr [
+      # Phase 4: HDR request/metadata/encode alignment (needs phase1 for portal_grab bits)
+      ../../polaris/phase4-portal-hdr-metadata.patch
+      ../../polaris/phase4-sdr-force-8bit-encode.patch
+      ../../polaris/phase4-hdr-force-file-sync.patch
+      ../../polaris/phase4-device-db-hdr-not-request.patch
+    ]
+    ++ lib.optionals enablePortalPrivateBus [
+      # Optional coexistence (ScreenCast-only private bus; needs phase1)
+      ../../polaris/optional-portal-private-bus.patch
+    ]
+    ++ lib.optionals phase2VulkanCuda [
+      # Phase 2: LINEAR DmaBuf → Vulkan → CUDA; sticky mmap_cuda (needs phase1)
+      ../../polaris/phase2-portal-vulkan-cuda.patch
+    ];
 
   ui = buildNpmPackage {
     inherit (finalAttrs) src version;

@@ -4,6 +4,7 @@
 
 | Item | State |
 |------|--------|
+| **Phases** | Patches renamed phase1/2/4 + optional bus; flake step packages for progressive disable as upstream lands |
 | **Polaris pin** | master `ba166ef` (2026-07-16); drop local `03` (upstream webui persist); active `01`–`02`,`04`–`08` |
 | **Deploy lea** | `95238f0` → gen **411**; polaris `0-unstable-2026-07-16` store `z40r88jk…`; portal bus + Avahi lea OK |
 | **Patch 08** | `POLARIS_PORTAL_DBUS_ADDRESS` → ScreenCast-only private bus; process session bus keeps Avahi/tray (KRDP coexistence path) |
