@@ -4,6 +4,7 @@
 
 | Item | State |
 |------|--------|
+| **Deploy lea** | `6c0c0c8` gen **412** phase-gated stack (full defaults) |
 | **Phases** | Patches renamed phase1/2/4 + optional bus; flake step packages for progressive disable as upstream lands |
 | **Polaris pin** | master `ba166ef` (2026-07-16); drop local `03` (upstream webui persist); active `01`–`02`,`04`–`08` |
 | **Deploy lea** | `95238f0` → gen **411**; polaris `0-unstable-2026-07-16` store `z40r88jk…`; portal bus + Avahi lea OK |
