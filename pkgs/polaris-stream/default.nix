@@ -100,13 +100,13 @@ stdenv'.mkDerivation (finalAttrs: {
   pname = "polaris-stream";
   # master + topic patches under ../../polaris/ (see polaris/README.md).
   # Archived numbered series: ../../archived/polaris/
-  version = "0-unstable-2026-07-13";
+  version = "0-unstable-2026-07-16";
 
   src = fetchFromGitHub {
     owner = "papi-ux";
     repo = "polaris";
-    rev = "2008458634c0d3f04f8abc39fab862bc69a47af8"; # master
-    hash = "sha256-e/nltRUAwZ/l6JtBti6uzumzY4zhiwQEA02oPat+7Jw=";
+    rev = "ba166ef862cf7ab07549b9067a935b939fe0a9e8"; # master 2026-07-16
+    hash = "sha256-oyMkUUIDn16ftBPgQMlFgIYIcCj5pXVB39pSoRD6hCs=";
     fetchSubmodules = true;
   };
 
@@ -115,8 +115,7 @@ stdenv'.mkDerivation (finalAttrs: {
     ../../polaris/01-portal-pipewire-dmabuf.patch
     # 02: portal HDR10 metadata + polaris-hdr-force gate
     ../../polaris/02-portal-hdr-metadata.patch
-    # 03: persist Web UI auth sessions across restart
-    ../../polaris/03-web-ui-session-persist.patch
+    # 03 removed: upstream ba166ef+ persists web UI sessions
     # 04: non-HDR streams stay 8-bit NV12
     ../../polaris/04-sdr-force-8bit-encode.patch
     # 06: write polaris-hdr-force from enable_hdr only (session owns gamescope restart)
@@ -293,9 +292,9 @@ stdenv'.mkDerivation (finalAttrs: {
   ];
 
   env = {
-    BUILD_VERSION = "0-unstable-2026-07-13";
+    BUILD_VERSION = "0-unstable-2026-07-16";
     BRANCH = "master";
-    COMMIT = "2008458634c0d3f04f8abc39fab862bc69a47af8";
+    COMMIT = "ba166ef862cf7ab07549b9067a935b939fe0a9e8";
   };
 
   # cmake runs in $source/build; stamp files so web-ui / browser-stream targets

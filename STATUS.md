@@ -4,6 +4,7 @@
 
 | Item | State |
 |------|--------|
+| **Polaris pin** | master `ba166ef` (2026-07-16); drop local `03` (upstream webui persist); active `01`–`02`,`04`–`08` |
 | **Patch 08** | `POLARIS_PORTAL_DBUS_ADDRESS` → ScreenCast-only private bus; process session bus keeps Avahi/tray (KRDP coexistence path) |
 | **Deploy lea** | `d4e5557` → luxusAi lock; `nh os switch` **gen 403**; polaris `/nix/store/3gj4z581…-polaris-stream-…`; units restarted (portal + nvenc OK) |
 | Capture/encode | portal DmaBuf → `vulkan_cuda` (sticky `mmap_cuda` fallback); HDR = XB30/P010 + Rec.2020/PQ; SDR = 8-bit/NV12 |
@@ -17,7 +18,7 @@
 
 | Package | Patches |
 |---------|---------|
-| polaris-stream | `01` portal · `02` HDR meta/force · `03` web · `04` force-8bit · `06` force-file · `07` device_db not request · `05` Vulkan→CUDA (default on) |
+| polaris-stream | master `ba166ef` · `01` portal · `02` HDR meta/force · `04` force-8bit · `06` force-file · `07` device_db · `08` portal bus · `05` Vulkan→CUDA (default on); web persist upstream |
 | gamescope-hdr | `01` PW HDR · `02` headless colorimetry · `03` prefer dmabuf · `04` ColorMgmt · postPatch EOTF_PQ · **WSI built** |
 | xdg-desktop-portal-gamescope | `01` stream size |
 

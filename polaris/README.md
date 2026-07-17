@@ -4,7 +4,7 @@ Wired by `pkgs/polaris-stream/default.nix`.
 
 | Patch | Default | What |
 |-------|---------|------|
-| `01`–`04` | always | portal PipeWire/DmaBuf, HDR metadata+force gate, web sessions, SDR force 8-bit |
+| `01`–`02`, `04` | always | portal PipeWire/DmaBuf, HDR metadata+force gate, SDR force 8-bit (web session persist is upstream) |
 | `06` | always | write `polaris-hdr-force` from final `enable_hdr` only (no gamescope restart, no encode-probe rewrite) |
 | `07` | always | `device_db`/`ai` `hdr_capable` ≠ session HDR request; only `client_profile` locks `enable_hdr` |
 | `08` | always | optional `POLARIS_PORTAL_DBUS_ADDRESS` → ScreenCast D-Bus only (session bus stays for Avahi/tray; host KRDP can keep KDE ScreenCast) |
