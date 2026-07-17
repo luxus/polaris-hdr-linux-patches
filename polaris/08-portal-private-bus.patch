@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: patch-rebuild <patches@local>
+Date: Fri, 17 Jul 2026 19:30:00 +0200
+Subject: [PATCH] topic8: optional private portal bus for ScreenCast only
+
+POLARIS_PORTAL_DBUS_ADDRESS routes ScreenCast D-Bus only (gamescope portal
+stack). Process session bus stays default for Avahi/tray so KRDP can keep
+host KDE ScreenCast.
+---
+--- a/src/platform/linux/portal_grab.cpp
++++ b/src/platform/linux/portal_grab.cpp
+@@ -83,13 +83,36 @@
+   // D-Bus introspection
+   // -----------------------------------------------------------------------
+ 
++
++  // Optional private portal bus (gamescope ScreenCast) while the rest of Polaris
++  // stays on the session bus (Avahi / tray / KRDP host portal).
++  // Set POLARIS_PORTAL_DBUS_ADDRESS=unix:path=.../polaris-portal/bus
++  static GDBusConnection *portal_bus_connection(GError **gerr) {
++    const char *addr = std::getenv("POLARIS_PORTAL_DBUS_ADDRESS");
++    if (addr && *addr) {
++      auto *conn = g_dbus_connection_new_for_address_sync(
++        addr,
++        static_cast<GDBusConnectionFlags>(
++          G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT |
++          G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION),
++        nullptr,
++        nullptr,
++        gerr);
++      if (conn) {
++        BOOST_LOG(info) << "portal: using POLARIS_PORTAL_DBUS_ADDRESS for ScreenCast"sv;
++      }
++      return conn;
++    }
++    return g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, gerr);
++  }
++
+   bool
+   is_portal_available() {
+     GError *gerr = nullptr;
+-    GDBusConnection *connection = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &gerr);
++    GDBusConnection *connection = portal_bus_connection(&gerr);
+     if (!connection) {
+       if (gerr) {
+-        BOOST_LOG(debug) << "Portal: could not connect to session bus: "sv << gerr->message;
++        BOOST_LOG(debug) << "Portal: could not connect to portal bus: "sv << gerr->message;
+         g_error_free(gerr);
+       }
+       return false;
+@@ -412,9 +435,9 @@
+     auto session = std::make_unique<portal_session_t>();
+ 
+     GError *gerr = nullptr;
+-    session->conn = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &gerr);
++    session->conn = portal_bus_connection(&gerr);
+     if (!session->conn) {
+-      BOOST_LOG(warning) << "portal: Cannot connect to session bus"sv;
++      BOOST_LOG(warning) << "portal: Cannot connect to portal bus"sv;
+       if (gerr) g_error_free(gerr);
+       session->failed = true;
+       return session;

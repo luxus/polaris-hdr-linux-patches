@@ -123,6 +123,8 @@ stdenv'.mkDerivation (finalAttrs: {
     ../../polaris/06-session-hdr-force-sync.patch
     # 07: device_db hdr_capable must not force enable_hdr (hybrid XB30+SDR on tablets)
     ../../polaris/07-device-db-hdr-not-request.patch
+    # 08: optional private bus for ScreenCast only (POLARIS_PORTAL_DBUS_ADDRESS)
+    ../../polaris/08-portal-private-bus.patch
   ] ++ lib.optionals enablePortalDmabufLinear [
     # 05: LINEAR DmaBuf Vulkan→CUDA bridge; loud mmap_cuda fallback + stats
     ../../polaris/05-portal-dmabuf-vulkan-cuda.patch
