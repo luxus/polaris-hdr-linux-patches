@@ -4,6 +4,8 @@ Wired by `pkgs/polaris-stream/default.nix`. Pin: papi-ux/polaris **master** (see
 
 Goal: land upstream in phases; **turn off a local phase when that code is on main**, rebase remaining patches, keep the same host behavior until everything is upstream.
 
+**Maintainer handoff (English, non-NixOS):** [docs/upstream-handoff-papi-ux.md](../docs/upstream-handoff-papi-ux.md) — what to expect, what to do, session architecture, SHM/portal/HDR/private bus.
+
 ## Phases
 
 | Phase | Package flag | Patch file(s) | What to verify |
