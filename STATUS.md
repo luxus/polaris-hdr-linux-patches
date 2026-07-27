@@ -1,9 +1,11 @@
 # Status
 
-## Now (2026-07-15)
+## Now (2026-07-27)
 
 | Item | State |
 |------|--------|
+| **Deploy lea** | luxusAi `eae62d84` → **gen 425**; private portal `NIX_XDG_DESKTOP_PORTAL_DIR` → gamescope portals only (ScreenCast ready + Avahi lea) |
+| **Start failure root** | User-profile portal dir had kde/kwallet only → `gamescope.portal` unrecognized → no ScreenCast → polaris ExecStartPre timeout |
 | **Deploy lea** | `6c0c0c8` gen **412** phase-gated stack (full defaults) |
 | **Phases** | Patches renamed phase1/2/4 + optional bus; flake step packages for progressive disable as upstream lands |
 | **Polaris pin** | master `ba166ef` (2026-07-16); drop local `03` (upstream webui persist); active `01`–`02`,`04`–`08` |
