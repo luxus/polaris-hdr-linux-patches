@@ -1,33 +1,90 @@
 From: polaris-hdr-linux-patches
-Subject: fix(nvhttp): session owner cancel ignores stale sessiontoken
+Subject: fix(nvhttp): answer Moonlight cancel before nested teardown SEGV
 
 --- a/src/nvhttp.cpp	2026-07-16 18:54:06.000000000 +0200
-+++ b/src/nvhttp.cpp	2026-07-27 18:46:45.210656117 +0200
-@@ -5414,12 +5414,21 @@
++++ b/src/nvhttp.cpp	2026-07-27 19:01:46.625642608 +0200
+@@ -5386,7 +5386,11 @@
+     print_req<PolarisHTTPS>(request);
+ 
+     pt::ptree tree;
++    bool response_written = false;
+     auto g = util::fail_guard([&]() {
++      if (response_written) {
++        return;
++      }
+       std::ostringstream data;
+ 
+       pt::write_xml(data, tree);
+@@ -5414,13 +5418,29 @@
      }
  
      const auto session_token = get_arg(args, "sessiontoken", "");
-+    // Owner is the paired cert UUID that launched the session. Do not require an
-+    // exact sessiontoken for that client — modern clients often send a stale one
-+    // and surface 470 "belongs to another client" / "different device" on quit.
-+    const bool is_owner = proc::proc.is_session_owner(named_cert_p->uuid);
-     const auto shutdown = proc::proc.request_session_shutdown(
-       named_cert_p->uuid,
-       session_token,
-       true,
+-    const auto shutdown = proc::proc.request_session_shutdown(
+-      named_cert_p->uuid,
+-      session_token,
+-      true,
 -      !session_token.empty()
-+      !session_token.empty() && !is_owner
-     );
-+    BOOST_LOG(info) << "cancel: client=["sv << named_cert_p->name
-+                    << "] owner="sv << (is_owner ? "yes" : "no")
-+                    << " token_sent="sv << !session_token.empty()
-+                    << " outcome="sv << static_cast<int>(shutdown.snapshot.outcome)
-+                    << " stopped="sv << shutdown.stopped;
-     switch (shutdown.snapshot.outcome) {
+-    );
+-    switch (shutdown.snapshot.outcome) {
++    // Paired cert UUID is the owner identity. Never require sessiontoken for the
++    // owner — Artemis/Moonlight often send a stale token and map any cancel
++    // failure to "started by another device".
++    const bool is_owner = proc::proc.is_session_owner(named_cert_p->uuid);
++
++    // Preflight without teardown so we can answer the client before nested
++    // gamescope undo (which can SEGV polaris mid-cancel and leave Moonlight
++    // thinking quit failed as "another device").
++    auto preflight = proc::proc.get_session_stop_snapshot(named_cert_p->uuid, true);
++    auto outcome = preflight.outcome;
++    if (is_owner &&
++        (outcome == proc::session_stop_outcome_t::other_owner ||
++         outcome == proc::session_stop_outcome_t::token_mismatch ||
++         outcome == proc::session_stop_outcome_t::uncontrolled_stream)) {
++      // Owner cert always wins over stale token / role race after disconnect.
++      if (preflight.had_running_app || preflight.active_sessions > 0) {
++        outcome = proc::session_stop_outcome_t::allowed;
++      } else {
++        outcome = proc::session_stop_outcome_t::no_active_session;
++      }
++    }
++
++    switch (outcome) {
        case proc::session_stop_outcome_t::allowed:
        case proc::session_stop_outcome_t::no_active_session:
+         tree.put("root.cancel", 1);
+@@ -5451,6 +5471,30 @@
+         break;
+     }
+ 
++    BOOST_LOG(info) << "cancel: client=["sv << named_cert_p->name
++                    << "] owner="sv << (is_owner ? "yes" : "no")
++                    << " preflight_outcome="sv << static_cast<int>(outcome)
++                    << " token_sent="sv << !session_token.empty()
++                    << " had_app="sv << preflight.had_running_app;
++
++    // Answer Moonlight first — nested WSI undo can SEGV the host process.
++    {
++      std::ostringstream data;
++      pt::write_xml(data, tree);
++      response->write(data.str());
++      response->close_connection_after_response = true;
++      response_written = true;
++    }
++
++    if (outcome == proc::session_stop_outcome_t::allowed) {
++      // Require no token for owner; empty token for non-owner still fails if not owned.
++      static_cast<void>(proc::proc.request_session_shutdown(
++        named_cert_p->uuid,
++        session_token,
++        true,
++        !session_token.empty() && !is_owner
++      ));
++    }
+   }
+ 
+   void appasset(resp_https_t response, req_https_t request) {
 --- a/src/process.cpp	2026-07-16 18:54:06.000000000 +0200
-+++ b/src/process.cpp	2026-07-27 18:46:45.211280690 +0200
++++ b/src/process.cpp	2026-07-27 19:01:46.626555447 +0200
 @@ -6252,7 +6252,9 @@
    bool proc_t::is_session_owner(const std::string &unique_id) {
      auto &sync = session_lifecycle_sync();
@@ -39,7 +96,7 @@ Subject: fix(nvhttp): session owner cancel ignores stale sessiontoken
    }
  
    bool proc_t::session_uses_virtual_display() {
-@@ -6374,10 +6376,11 @@
+@@ -6374,17 +6376,22 @@
          }
        );
      snapshot.owned_by_client =
@@ -52,6 +109,23 @@ Subject: fix(nvhttp): session owner cancel ignores stale sessiontoken
 +      _launch_session->unique_id.empty() ||
 +      (!unique_id.empty() &&
 +       boost::iequals(_launch_session->unique_id, unique_id));
++    // Owner cert identity is enough; do not require sessiontoken for stop/cancel.
++    // (Clients often send a stale token after disconnect and get a false 470.)
      snapshot.game = _app_name;
-     const bool token_matches = session_stop_token_matches(
-       require_exact_token,
+-    const bool token_matches = session_stop_token_matches(
+-      require_exact_token,
+-      expected_token,
+-      snapshot.session_token,
+-      rtsp_snapshot.requester_session_tokens
+-    );
++    const bool token_matches =
++      snapshot.owned_by_client ||
++      session_stop_token_matches(
++        require_exact_token,
++        expected_token,
++        snapshot.session_token,
++        rtsp_snapshot.requester_session_tokens
++      );
+     snapshot.outcome = evaluate_session_stop_request(
+       can_launch,
+       snapshot.had_running_app,
