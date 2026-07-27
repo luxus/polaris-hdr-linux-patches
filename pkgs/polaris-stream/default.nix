@@ -130,9 +130,9 @@ stdenv'.mkDerivation (finalAttrs: {
       fetchFromGitHub {
         owner = "luxus";
         repo = "polaris";
-        # Stream mode / stream_runtime foundation (feat/linux-stream-runtime tip).
-        rev = "2202d1d7512d360d80587b4fc967219a91e16718";
-        hash = "sha256-ojPhYCiPhcK8V5Hc97Cyu5mYVdNgN/LYqQggEYJ2V+E=";
+        # Stream path registry + stream_runtime foundation (feat/linux-stream-runtime tip).
+        rev = "e7ce2095a06aa238da8de2b860a9bb558d3d9552";
+        hash = "sha256-vz/VTAvnjC9trN5tv8EpjNNDKFUxXQIjCB9ZHs5d8Fo=";
         fetchSubmodules = true;
       };
 
