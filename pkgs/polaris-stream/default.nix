@@ -129,7 +129,11 @@ stdenv'.mkDerivation (finalAttrs: {
   # Apply order must stay: phase1 → phase4 portal_grab/video/process → optional bus → phase2
   # (phase2 was historically last; rebase only against this order).
   patches =
-    lib.optionals enablePhase1Portal [
+    [
+      # Always: /cancel must not 470 the session owner on a stale sessiontoken
+      ../../polaris/fix-cancel-owner-token.patch
+    ]
+    ++ lib.optionals enablePhase1Portal [
       # Phase 1: Portal/PipeWire + SHM/MemFd fallback + diag (+ same-GPU DmaBuf offer)
       ../../polaris/phase1-portal-pipewire-shm.patch
     ]

@@ -15,6 +15,7 @@ Goal: land upstream in phases; **turn off a local phase when that code is on mai
 | **3** Gamescope Stream ownership | *(not a Polaris patch)* | host `polaris-hdr-session` / idle unit | Start/wait/stop owns gamescope + cleanup |
 | **4** HDR when request + format + encode agree | `enablePhase4Hdr` (default on) | `phase4-*.patch` (4 files) | No hybrid PQ+SDR; force-file from `enable_hdr`; device_db ≠ force HDR |
 | Optional | `enablePortalPrivateBus` (default on) | `optional-portal-private-bus.patch` | `POLARIS_PORTAL_DBUS_ADDRESS` ScreenCast only; session bus for Avahi |
+| Always | *(always applied)* | `fix-cancel-owner-token.patch` | Session owner can `/cancel` without exact sessiontoken (no false 470) |
 
 **Apply order** (fixed): phase1 → phase4 → optional bus → phase2.
 
