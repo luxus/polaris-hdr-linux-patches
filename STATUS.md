@@ -4,7 +4,8 @@
 
 | Item | State |
 |------|--------|
-| **Deploy lea** | luxusAi `c1b84228` → **gen 426**; nested crash recovery in polaris wait + portal NIX_XDG fix |
+| **Deploy lea** | patches `d02a18f` + luxusAi lock → **gen 427**; cancel owner token fix + nested recover + portal NIX_XDG |
+| **Quit 470** | Owner `/cancel` no longer requires exact sessiontoken (stale token → false "another client"/different device) |
 | **Stream-end crash** | Nested stop can SEGV polaris mid-undo; left idle runtime-masked / no `gamescope-0` → restart hung. Wait script now unmasks + restarts idle |
 | **Portal ScreenCast root** | User-profile portal dir had kde/kwallet only → `gamescope.portal` unrecognized → no ScreenCast (fixed gen 425) |
 | **Deploy lea** | `6c0c0c8` gen **412** phase-gated stack (full defaults) |
