@@ -1,0 +1,41 @@
+From: polaris-hdr-linux-patches
+Subject: [PATCH] fix(portal): safe PipeWire capture teardown (no SEGV on stop)
+
+Disconnect and null the stream under the loop lock before destroy so
+on_state_changed cannot run against a destroyed capture_t.
+
+diff --git a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewire_capture.cpp
+--- a/src/platform/linux/pipewire_capture.cpp
++++ b/src/platform/linux/pipewire_capture.cpp
+@@ -466,13 +466,21 @@
+       frame_cv_.notify_all();
+     }
+ 
++    // Stop the loop first, then disconnect/destroy the stream under the loop
++    // lock so state_changed cannot run against a freed capture_t (SEGV on unit stop).
+     if (loop_) {
+       pw_thread_loop_stop(loop_);
++      pw_thread_loop_lock(loop_);
+     }
+     if (stream_) {
++      pw_stream_set_active(stream_, false);
++      pw_stream_disconnect(stream_);
+       pw_stream_destroy(stream_);
+       stream_ = nullptr;
+     }
++    if (loop_) {
++      pw_thread_loop_unlock(loop_);
++    }
+     if (core_) {
+       pw_core_disconnect(core_);
+       core_ = nullptr;
+@@ -974,6 +982,9 @@
+ 
+   void capture_t::on_state_changed(void *userdata, pw_stream_state old, pw_stream_state state, const char *errmsg) {
+     auto *cap = static_cast<capture_t *>(userdata);
++    if (!cap) {
++      return;
++    }
+     BOOST_LOG(info) << "portal: PipeWire state: "sv
+                     << pw_stream_state_as_string(old) << " -> "sv
+                     << pw_stream_state_as_string(state);

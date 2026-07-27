@@ -130,9 +130,9 @@ stdenv'.mkDerivation (finalAttrs: {
       fetchFromGitHub {
         owner = "luxus";
         repo = "polaris";
-        # Stream path registry + stream_runtime foundation (feat/linux-stream-runtime tip).
-        rev = "e7ce2095a06aa238da8de2b860a9bb558d3d9552";
-        hash = "sha256-vz/VTAvnjC9trN5tv8EpjNNDKFUxXQIjCB9ZHs5d8Fo=";
+        # Stream path registry + headless_dongle + stream_runtime (feat/linux-stream-runtime tip).
+        rev = "ddf724994da2fc327c509cb6f7f5d9d7eb2cb1f3";
+        hash = "sha256-YJky04afxJYW5M02C5v82wD41clN7+RRhKfOZvcWvV4=";
         fetchSubmodules = true;
       };
 
@@ -147,6 +147,8 @@ stdenv'.mkDerivation (finalAttrs: {
     ++ lib.optionals enablePhase1Portal [
       # Phase 1: Portal/PipeWire + SHM/MemFd fallback + diag (+ same-GPU DmaBuf offer)
       ../../polaris/phase1-portal-pipewire-shm.patch
+      # Teardown SEGV: disconnect stream under loop lock before destroy
+      ../../polaris/fix-pipewire-capture-teardown.patch
     ]
     ++ lib.optionals enablePhase4Hdr [
       # Phase 4: HDR request/metadata/encode alignment (needs phase1 for portal_grab bits)
