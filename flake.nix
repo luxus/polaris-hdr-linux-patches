@@ -11,32 +11,50 @@
         "aarch64-linux"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
+      # Local luxus/polaris checkout for pin iteration (requires --impure):
+      #   POLARIS_SRC=$HOME/projects/polaris nix build --impure .#polaris-stream
+      polarisLocalSrc =
+        let
+          p = builtins.getEnv "POLARIS_SRC";
+        in
+        if p == "" then null else /. + p;
+      polarisCallArgs =
+        if polarisLocalSrc == null then { } else { polarisSrc = polarisLocalSrc; };
     in
     {
       overlays.default = final: prev: {
         gamescope-hdr = final.callPackage ./pkgs/gamescope-hdr { };
         xdg-desktop-portal-gamescope = final.callPackage ./pkgs/xdg-desktop-portal-gamescope { };
-        # Full stack (all phases + optional private bus).
-        polaris-stream = final.callPackage ./pkgs/polaris-stream { };
+        # Full stack (all phases + optional private bus). Base: luxus/polaris fork.
+        polaris-stream = final.callPackage ./pkgs/polaris-stream polarisCallArgs;
         # Step packages: disable later phases when testing / after upstream lands a phase.
-        polaris-stream-phase1 = final.callPackage ./pkgs/polaris-stream {
-          enablePhase1Portal = true;
-          enablePhase2VulkanCuda = false;
-          enablePhase4Hdr = false;
-          enablePortalPrivateBus = false;
-        };
-        polaris-stream-phase1-2 = final.callPackage ./pkgs/polaris-stream {
-          enablePhase1Portal = true;
-          enablePhase2VulkanCuda = true;
-          enablePhase4Hdr = false;
-          enablePortalPrivateBus = false;
-        };
-        polaris-stream-phase1-2-4 = final.callPackage ./pkgs/polaris-stream {
-          enablePhase1Portal = true;
-          enablePhase2VulkanCuda = true;
-          enablePhase4Hdr = true;
-          enablePortalPrivateBus = false;
-        };
+        polaris-stream-phase1 = final.callPackage ./pkgs/polaris-stream (
+          polarisCallArgs
+          // {
+            enablePhase1Portal = true;
+            enablePhase2VulkanCuda = false;
+            enablePhase4Hdr = false;
+            enablePortalPrivateBus = false;
+          }
+        );
+        polaris-stream-phase1-2 = final.callPackage ./pkgs/polaris-stream (
+          polarisCallArgs
+          // {
+            enablePhase1Portal = true;
+            enablePhase2VulkanCuda = true;
+            enablePhase4Hdr = false;
+            enablePortalPrivateBus = false;
+          }
+        );
+        polaris-stream-phase1-2-4 = final.callPackage ./pkgs/polaris-stream (
+          polarisCallArgs
+          // {
+            enablePhase1Portal = true;
+            enablePhase2VulkanCuda = true;
+            enablePhase4Hdr = true;
+            enablePortalPrivateBus = false;
+          }
+        );
         # Shell helper: source ${pkgs.polaris-nvidia-pin}/share/polaris/polaris-nvidia-pin.sh
         polaris-nvidia-pin = final.runCommand "polaris-nvidia-pin" { } ''
           mkdir -p $out/share/polaris

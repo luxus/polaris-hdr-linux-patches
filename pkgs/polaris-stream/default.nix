@@ -1,4 +1,5 @@
-# polaris-stream — papi-ux/polaris GameStream/Moonlight host (master + #152 patch).
+# polaris-stream — luxus/polaris fork (stream mode + runtime foundation) + phase patches.
+# Base tracks github:luxus/polaris (not papi-ux tip) until the mode/runtime work is upstreamed.
 # Packaging pattern adapted from Sunshine / nixpkgs GameStream hosts:
 # LizardByte ffmpeg prebuilt, separate npm UI, optional CUDA, Linux udev paths.
 # Linux-only (no Darwin focus). Browser Stream helper is prebuilt with buildGoModule.
@@ -82,6 +83,10 @@
   enablePortalPrivateBus ? true,
   # Back-compat alias for enablePhase2VulkanCuda.
   enablePortalDmabufLinear ? null,
+  # Optional local checkout of polaris (absolute path or path value). When set,
+  # skips fetchFromGitHub — use for iterating on the luxus/polaris fork:
+  #   POLARIS_SRC=$HOME/projects/polaris nix build --impure .#polaris-stream
+  polarisSrc ? null,
 }:
 let
   stdenv' = if cudaSupport then cudaPackages.backendStdenv else stdenv;
@@ -113,17 +118,23 @@ assert (!phase2VulkanCuda || enablePhase1Portal);
 assert (!enablePortalPrivateBus || enablePhase1Portal);
 stdenv'.mkDerivation (finalAttrs: {
   pname = "polaris-stream";
-  # master + topic patches under ../../polaris/ (see polaris/README.md).
+  # luxus/polaris fork + topic patches under ../../polaris/ (see polaris/README.md).
   # Archived numbered series: ../../archived/polaris/
-  version = "0-unstable-2026-07-16";
+  # After pushing feat/linux-stream-runtime (or master), update rev + hash.
+  version = "0-unstable-2026-07-28";
 
-  src = fetchFromGitHub {
-    owner = "papi-ux";
-    repo = "polaris";
-    rev = "ba166ef862cf7ab07549b9067a935b939fe0a9e8"; # master 2026-07-16
-    hash = "sha256-oyMkUUIDn16ftBPgQMlFgIYIcCj5pXVB39pSoRD6hCs=";
-    fetchSubmodules = true;
-  };
+  src =
+    if polarisSrc != null then
+      polarisSrc
+    else
+      fetchFromGitHub {
+        owner = "luxus";
+        repo = "polaris";
+        # Stream mode / stream_runtime foundation (feat/linux-stream-runtime tip).
+        rev = "2202d1d7512d360d80587b4fc967219a91e16718";
+        hash = "sha256-ojPhYCiPhcK8V5Hc97Cyu5mYVdNgN/LYqQggEYJ2V+E=";
+        fetchSubmodules = true;
+      };
 
   # Phase 3 (Gamescope Stream ownership) is host/session wiring, not these patches.
   # Apply order must stay: phase1 → phase4 portal_grab/video/process → optional bus → phase2

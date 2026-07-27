@@ -1,6 +1,16 @@
 # Polaris patches (upstream-aligned phases)
 
-Wired by `pkgs/polaris-stream/default.nix`. Pin: papi-ux/polaris **master** (see package `rev`).
+Wired by `pkgs/polaris-stream/default.nix`.
+
+**Pin base:** [luxus/polaris](https://github.com/luxus/polaris) (fork) — currently the **stream mode / `stream_runtime` foundation** branch (`feat/linux-stream-runtime`), not papi-ux master. Rebase phase patches against that base so Gamescope Stream integration does not hit a surprise stack rewrite later.
+
+Local pin without pushing:
+
+```bash
+POLARIS_SRC=$HOME/projects/polaris nix build --impure --no-link .#polaris-stream
+```
+
+After the branch is on GitHub, refresh `rev` + `hash` in `pkgs/polaris-stream/default.nix` (leave `POLARIS_SRC` unset for pure consumer builds).
 
 Goal: land upstream in phases; **turn off a local phase when that code is on main**, rebase remaining patches, keep the same host behavior until everything is upstream.
 

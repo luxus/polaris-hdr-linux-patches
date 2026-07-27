@@ -1,9 +1,11 @@
 # Status
 
-## Now (2026-07-27)
+## Now (2026-07-28)
 
 | Item | State |
 |------|--------|
+| **Polaris pin** | **luxus/polaris** `2202d1d` (`feat/linux-stream-runtime` — stream mode + `stream_runtime`). Not papi-ux `ba166ef`. Local override: `POLARIS_SRC=$HOME/projects/polaris nix build --impure .#polaris-stream` |
+| **Mode rework** | First-class `linux_stream_mode` / `linux_private_runtime`; labwc backend; `gamescope_stream` registered unavailable. Phase patches dry-apply clean with offsets on rework tree |
 | **Deploy lea** | patches `add85e6` → cancel **respond-before-teardown** (Moonlight "another device" was failed cancel HTTP after SEGV) |
 | **Quit UX** | Host authorized quit then SEGVd mid nested undo before writing 200 → client "started by another device". Fix: answer cancel first + owner skips stale sessiontoken |
 | **Stream-end crash** | Nested stop can SEGV polaris mid-undo; left idle runtime-masked / no `gamescope-0` → restart hung. Wait script now unmasks + restarts idle |
@@ -25,7 +27,7 @@
 
 | Package | Patches |
 |---------|---------|
-| polaris-stream | master `ba166ef` · `01` portal · `02` HDR meta/force · `04` force-8bit · `06` force-file · `07` device_db · `08` portal bus · `05` Vulkan→CUDA (default on); web persist upstream |
+| polaris-stream | **luxus/polaris** stream-runtime branch · phase1 portal · phase4 HDR · optional bus · phase2 Vulkan→CUDA · fix-cancel; web persist upstream |
 | gamescope-hdr | `01` PW HDR · `02` headless colorimetry · `03` prefer dmabuf · `04` ColorMgmt · postPatch EOTF_PQ · **WSI built** |
 | xdg-desktop-portal-gamescope | `01` stream size |
 
