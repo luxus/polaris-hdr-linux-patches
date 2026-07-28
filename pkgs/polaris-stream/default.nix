@@ -131,9 +131,9 @@ stdenv'.mkDerivation (finalAttrs: {
       fetchFromGitHub {
         owner = "luxus";
         repo = "polaris";
-        # Gamescope attach: DXVK/Proton HDR env when enable_hdr (BG3 content HDR).
-        rev = "2ccb5e0fa2b9c209b9a4b85809bfaa66dceb8ef3";
-        hash = "sha256-GDbPE9w9vyfaKaBpuwK0CTbMLHMJBxREa1m4wVKRln8=";
+        # Nested WSI for HDR Steam titles (restore pre-SB-5 polaris-hdr-session path).
+        rev = "0faab10ecd8fce745cd7dbc8b47e2498892a59ab";
+        hash = "sha256-aM6LYfCa7D4+inck+TMFKxfPVk0cKHW5N8aW7eAT4gQ=";
         fetchSubmodules = true;
       };
 
@@ -311,8 +311,8 @@ stdenv'.mkDerivation (finalAttrs: {
   env = {
     BUILD_VERSION = "0-unstable-2026-07-28";
     BRANCH = "feat/linux-stream-runtime";
-    # Matches src.rev (attach DXVK_HDR + idle/BGRx demote).
-    COMMIT = "2ccb5e0fa2b9c209b9a4b85809bfaa66dceb8ef3";
+    # Matches src.rev (nested WSI HDR + BGRx demote).
+    COMMIT = "0faab10ecd8fce745cd7dbc8b47e2498892a59ab";
   };
 
   # cmake runs in $source/build; stamp files so web-ui / browser-stream targets
