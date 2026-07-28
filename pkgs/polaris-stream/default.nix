@@ -133,9 +133,9 @@ stdenv'.mkDerivation (finalAttrs: {
     else
       fetchgit {
         url = "https://github.com/luxus/polaris.git";
-        # Audio: loopback sunshine* → host (local sound) + re-pin cooldown.
-        rev = "02d1e993ee4ba56d0e3a90c2cfb3feed745a525f";
-        hash = "sha256-oLeJEjAgO9rEZ6gcB0S9nIDfuDF2++UqXk0iHzkiwfo=";
+        # Audio: capture EasyEffects when it owns default (FMOD target.object).
+        rev = "6cd177733f16350b6879c4f316553e8babda290c";
+        hash = "sha256-NRnvfj9rlpWKNbfNlfc1j4FOlbTh5Jb82+U2ycncteE=";
         fetchSubmodules = true;
       };
 
