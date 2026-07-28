@@ -131,8 +131,8 @@ stdenv'.mkDerivation (finalAttrs: {
       fetchFromGitHub {
         owner = "luxus";
         repo = "polaris";
-        # Dongle: staged privacy topology + host portal token bootstrap.
-        rev = "a59c98af85163e30e934407aea1bdd91d0dfd85d";
+        # Dongle: host portal CPU path when KDE omits DMA-BUF modifiers.
+        rev = "297d99035ba54a4070cec5726ec249b101ec43d0";
         hash = "sha256-O8XNj3Yu0+F0lWvkZ8l9VctRBRdM98IDno1qHQ1Hkeo=";
         fetchSubmodules = true;
       };
@@ -312,7 +312,7 @@ stdenv'.mkDerivation (finalAttrs: {
     BUILD_VERSION = "0-unstable-2026-07-28";
     BRANCH = "feat/linux-stream-runtime";
     # Matches src.rev (portal lock contract + dongle portal default).
-    COMMIT = "a59c98af85163e30e934407aea1bdd91d0dfd85d";
+    COMMIT = "297d99035ba54a4070cec5726ec249b101ec43d0";
   };
 
   # cmake runs in $source/build; stamp files so web-ui / browser-stream targets
