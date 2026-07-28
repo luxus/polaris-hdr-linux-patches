@@ -5,7 +5,7 @@
 | Item | State |
 |------|--------|
 | **Polaris pin** | **luxus/polaris** `85e6733` feat/linux-stream-runtime — phases 1/2/4 + private bus **in tree**; portal lock contract (no nested `ensure_global_session`); headless_dongle forces `capture=kms` on load; no topics mega-patch on this pin. |
-| **Portal video** | Fixed topics self-deadlock that blocked PipeWire/CUDA DMABUF after ScreenCast Start and hung stop → SIGTRAP. Deploy + prove gamescope_stream on lea still required. |
+| **Portal video** | Fixed topics self-deadlock that blocked PipeWire/CUDA DMABUF after ScreenCast Start and hung stop → SIGTRAP. **lea deploy** gen with pin `b9b36b3` / polaris `85e6733` (CUDA build); polaris.service active, UI :47990 200; dongle normalize observed `capture=`→`capture=kms`. **Still need** gamescope_stream Moonlight prove: node ID + `capture_transport=dmabuf` + `convert_path=vulkan_cuda` within ~2s, clean stop no SIGTRAP. |
 | **Mode rework** | First-class `linux_stream_mode` / `linux_private_runtime`; labwc backend; `gamescope_stream` registered unavailable. Phase patches dry-apply clean with offsets on rework tree |
 | **Deploy lea** | patches `add85e6` → cancel **respond-before-teardown** (Moonlight "another device" was failed cancel HTTP after SEGV) |
 | **Quit UX** | Host authorized quit then SEGVd mid nested undo before writing 200 → client "started by another device". Fix: answer cancel first + owner skips stale sessiontoken |
