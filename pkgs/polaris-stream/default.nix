@@ -131,9 +131,9 @@ stdenv'.mkDerivation (finalAttrs: {
       fetchFromGitHub {
         owner = "luxus";
         repo = "polaris";
-        # Gamescope: demote PQ when capture is BGRx; restart idle when force≠cmdline HDR.
-        rev = "db5568e263519b15387b74daeaa5ab582dc4d1f7";
-        hash = "sha256-LLRdYZSqd5iIi706SUo/AX7mfp0zz7qien9dhctGBxk=";
+        # Gamescope attach: DXVK/Proton HDR env when enable_hdr (BG3 content HDR).
+        rev = "2ccb5e0fa2b9c209b9a4b85809bfaa66dceb8ef3";
+        hash = "sha256-GDbPE9w9vyfaKaBpuwK0CTbMLHMJBxREa1m4wVKRln8=";
         fetchSubmodules = true;
       };
 
@@ -311,8 +311,8 @@ stdenv'.mkDerivation (finalAttrs: {
   env = {
     BUILD_VERSION = "0-unstable-2026-07-28";
     BRANCH = "feat/linux-stream-runtime";
-    # Matches src.rev (BGRx PQ demote + idle HDR flag sync).
-    COMMIT = "db5568e263519b15387b74daeaa5ab582dc4d1f7";
+    # Matches src.rev (attach DXVK_HDR + idle/BGRx demote).
+    COMMIT = "2ccb5e0fa2b9c209b9a4b85809bfaa66dceb8ef3";
   };
 
   # cmake runs in $source/build; stamp files so web-ui / browser-stream targets
