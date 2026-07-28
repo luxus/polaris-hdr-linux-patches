@@ -310,9 +310,10 @@ stdenv'.mkDerivation (finalAttrs: {
   ];
 
   env = {
-    BUILD_VERSION = "0-unstable-2026-07-16";
-    BRANCH = "master";
-    COMMIT = "ba166ef862cf7ab07549b9067a935b939fe0a9e8";
+    BUILD_VERSION = "0-unstable-2026-07-28";
+    BRANCH = "feat/linux-stream-runtime";
+    # Matches src.rev (portal lock contract + phases in-tree).
+    COMMIT = "85e67330f9fd35cb3ba68f95470b9b3fc0036cf7";
   };
 
   # cmake runs in $source/build; stamp files so web-ui / browser-stream targets
