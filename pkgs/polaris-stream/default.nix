@@ -138,13 +138,13 @@ stdenv'.mkDerivation (finalAttrs: {
 
   # Phase 3 (Gamescope Stream ownership) is host/session wiring, not these patches.
   # Topic series under polaris/phase*.patch is retained for older revs. Current tip
-  # (50929ef+) needs a rebased single patch: solid-base portal changes conflicted
+  # (90d4ca6+) needs a rebased single patch: solid-base portal changes conflicted
   # with the modular PipeWire/phase1..phase2 series. Production always enables
   # phase1 + phase2 + phase4 + private bus via this combined patch.
   # fix-cancel-owner-token.patch is upstream in luxus/polaris >= a364fb7 / 06b0925.
   patches =
     lib.optionals enablePhase1Portal [
-      ../../polaris/polaris-stream-topics-2d5f50b.patch
+      ../../polaris/polaris-stream-topics-90d4ca6.patch
     ];
 
   ui = buildNpmPackage {
