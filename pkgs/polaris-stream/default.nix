@@ -119,7 +119,7 @@ assert (!enablePortalPrivateBus || enablePhase1Portal);
 stdenv'.mkDerivation (finalAttrs: {
   pname = "polaris-stream";
   # luxus/polaris fork. Phase1/2/4 + private bus + portal lock contract are on
-  # feat/linux-stream-runtime tip (85e6733+). Historical topics/phase patches under
+  # feat/linux-stream-runtime tip (559aac4+). Historical topics/phase patches under
   # ../../polaris/ and ../../archived/polaris/ for older pins only.
   # After pushing feat/linux-stream-runtime (or master), update rev + hash.
   version = "0-unstable-2026-07-28";
@@ -131,10 +131,9 @@ stdenv'.mkDerivation (finalAttrs: {
       fetchFromGitHub {
         owner = "luxus";
         repo = "polaris";
-        # Portal lock contract + pipewire_capture + headless_dongle kms normalize
-        # (fixes topics self-deadlock: ensure_global_capture nested g_portal_mu).
-        rev = "85e67330f9fd35cb3ba68f95470b9b3fc0036cf7";
-        hash = "sha256-9UFE4b+hGiTz+L9/r+x373v1eBU46+b6hdMBsLT5MzM=";
+        # Portal lock contract + dongle defaults to portal (not CAP_SYS_ADMIN KMS).
+        rev = "559aac49aac74532cb7f2cc112bffca87210e61c";
+        hash = "sha256-Fx+cWGrK2/rYzUJ+4f5YUGKWMndjxa82aW8M/E+/opw=";
         fetchSubmodules = true;
       };
 
@@ -312,8 +311,8 @@ stdenv'.mkDerivation (finalAttrs: {
   env = {
     BUILD_VERSION = "0-unstable-2026-07-28";
     BRANCH = "feat/linux-stream-runtime";
-    # Matches src.rev (portal lock contract + phases in-tree).
-    COMMIT = "85e67330f9fd35cb3ba68f95470b9b3fc0036cf7";
+    # Matches src.rev (portal lock contract + dongle portal default).
+    COMMIT = "559aac49aac74532cb7f2cc112bffca87210e61c";
   };
 
   # cmake runs in $source/build; stamp files so web-ui / browser-stream targets
