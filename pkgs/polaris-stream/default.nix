@@ -131,39 +131,20 @@ stdenv'.mkDerivation (finalAttrs: {
         owner = "luxus";
         repo = "polaris";
         # Stream path registry + headless_dongle + stream_runtime (feat/linux-stream-runtime tip).
-        rev = "c2cb9934154ec3d36dc3cf17bc6efc3660045208";
-        hash = "sha256-6OXDCLV5BkS9sP1Jmi+3H4DGmUsZX2PPshoLDT2MydQ=";
+        rev = "2d5f50b1bcea5810fbb571055b12edea6ee07b75";
+        hash = "sha256-uqrMo/SKGXf5C8TaxfgbiTGQFGyD/rWxWjpwNutQETI=";
         fetchSubmodules = true;
       };
 
   # Phase 3 (Gamescope Stream ownership) is host/session wiring, not these patches.
-  # Apply order must stay: phase1 → phase4 portal_grab/video/process → optional bus → phase2
-  # (phase2 was historically last; rebase only against this order).
+  # Topic series under polaris/phase*.patch is retained for older revs. Current tip
+  # (2d5f50b+) needs a rebased single patch: solid-base portal changes conflicted
+  # with the modular PipeWire/phase1..phase2 series. Production always enables
+  # phase1 + phase2 + phase4 + private bus via this combined patch.
+  # fix-cancel-owner-token.patch is upstream in luxus/polaris >= a364fb7 / 06b0925.
   patches =
-    [
-      # Always: /cancel must not 470 the session owner on a stale sessiontoken
-      ../../polaris/fix-cancel-owner-token.patch
-    ]
-    ++ lib.optionals enablePhase1Portal [
-      # Phase 1: Portal/PipeWire + SHM/MemFd fallback + diag (+ same-GPU DmaBuf offer)
-      ../../polaris/phase1-portal-pipewire-shm.patch
-      # Teardown SEGV: disconnect stream under loop lock before destroy
-      ../../polaris/fix-pipewire-capture-teardown.patch
-    ]
-    ++ lib.optionals enablePhase4Hdr [
-      # Phase 4: HDR request/metadata/encode alignment (needs phase1 for portal_grab bits)
-      ../../polaris/phase4-portal-hdr-metadata.patch
-      ../../polaris/phase4-sdr-force-8bit-encode.patch
-      ../../polaris/phase4-hdr-force-file-sync.patch
-      ../../polaris/phase4-device-db-hdr-not-request.patch
-    ]
-    ++ lib.optionals enablePortalPrivateBus [
-      # Optional coexistence (ScreenCast-only private bus; needs phase1)
-      ../../polaris/optional-portal-private-bus.patch
-    ]
-    ++ lib.optionals phase2VulkanCuda [
-      # Phase 2: LINEAR DmaBuf → Vulkan → CUDA; sticky mmap_cuda (needs phase1)
-      ../../polaris/phase2-portal-vulkan-cuda.patch
+    lib.optionals enablePhase1Portal [
+      ../../polaris/polaris-stream-topics-2d5f50b.patch
     ];
 
   ui = buildNpmPackage {
