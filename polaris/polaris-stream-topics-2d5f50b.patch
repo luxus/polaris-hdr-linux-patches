@@ -2451,6 +2451,11 @@ diff --git a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewi
 +
 +  void capture_t::on_param_changed(void *userdata, std::uint32_t id, const spa_pod *param) {
 +    auto *cap = static_cast<capture_t *>(userdata);
++    // SB-2: late format renegotiation after running_=false (compositor dying)
++    // used to queue_buffer into a half-torn-down stream → polaris SEGV.
++    if (!cap || !cap->running() || !cap->stream_) {
++      return;
++    }
 +    if (!param || id != SPA_PARAM_Format) {
 +      return;
 +    }
@@ -2592,9 +2597,15 @@ diff --git a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewi
 +    if (!buffer || !stream_) {
 +      return;
 +    }
++    // Drop buffers once teardown cleared running_; never touch PW after stop.
++    if (!running()) {
++      return;
++    }
 +    if (loop_ && !pw_thread_loop_in_thread(loop_)) {
 +      pw_thread_loop_lock(loop_);
-+      pw_stream_queue_buffer(stream_, buffer);
++      if (stream_ && running()) {
++        pw_stream_queue_buffer(stream_, buffer);
++      }
 +      pw_thread_loop_unlock(loop_);
 +      return;
 +    }
