@@ -112,6 +112,15 @@ let
       .${stdenv.hostPlatform.system};
   };
 
+  # Nested submodule of moonlight-common-c; fetchFromGitHub often omits it.
+  # Pin matches third-party/moonlight-common-c/enet @ 115a10b (cgutman/enet).
+  enetSrc = fetchFromGitHub {
+    owner = "cgutman";
+    repo = "enet";
+    rev = "115a10baa1d7f291ff5b870765610fd3b4a6e43c";
+    hash = "sha256-B8hQDwb5OplDRA6fo2KC47nA8JxICVeOQ2G7rh6mZi8=";
+  };
+
 in
 assert stdenv.hostPlatform.isLinux;
 assert (!phase2VulkanCuda || enablePhase1Portal);
@@ -145,6 +154,17 @@ stdenv'.mkDerivation (finalAttrs: {
   # Phase flags below remain for step packages / documentation; they no longer
   # select patch files once the pin includes the phase code.
   patches = [ ];
+
+  # Nested submodule not always present after fetchFromGitHub + fetchSubmodules.
+  postUnpack = ''
+    enet_dst="$sourceRoot/third-party/moonlight-common-c/enet"
+    if [ ! -f "$enet_dst/CMakeLists.txt" ]; then
+      echo "polaris-stream: injecting nested enet submodule into $enet_dst"
+      rm -rf "$enet_dst"
+      cp -a ${enetSrc} "$enet_dst"
+      chmod -R u+w "$enet_dst"
+    fi
+  '';
 
   ui = buildNpmPackage {
     inherit (finalAttrs) src version;
