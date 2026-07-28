@@ -13,6 +13,8 @@
       forAllSystems = nixpkgs.lib.genAttrs systems;
       # Local luxus/polaris checkout for pin iteration (requires --impure):
       #   POLARIS_SRC=$HOME/projects/polaris nix build --impure .#polaris-stream
+      # Builds enable CUDA by default (NVENC). Do NOT drop a non-CUDA result into
+      # polaris.service — that black-screens streams (encoder_cache falls back).
       polarisLocalSrc =
         let
           p = builtins.getEnv "POLARIS_SRC";
@@ -26,11 +28,17 @@
         gamescope-hdr = final.callPackage ./pkgs/gamescope-hdr { };
         xdg-desktop-portal-gamescope = final.callPackage ./pkgs/xdg-desktop-portal-gamescope { };
         # Full stack (all phases + optional private bus). Base: luxus/polaris fork.
-        polaris-stream = final.callPackage ./pkgs/polaris-stream polarisCallArgs;
+        # Force CUDA/NVENC for this HDR GameStream overlay (override cudaSupport=false
+        # only for software-only CI). Matching lea nixpkgs.cudaSupport alone is not
+        # enough for pure `nix build .#polaris-stream` from this flake.
+        polaris-stream = final.callPackage ./pkgs/polaris-stream (
+          polarisCallArgs // { cudaSupport = true; }
+        );
         # Step packages: disable later phases when testing / after upstream lands a phase.
         polaris-stream-phase1 = final.callPackage ./pkgs/polaris-stream (
           polarisCallArgs
           // {
+            cudaSupport = true;
             enablePhase1Portal = true;
             enablePhase2VulkanCuda = false;
             enablePhase4Hdr = false;
@@ -40,6 +48,7 @@
         polaris-stream-phase1-2 = final.callPackage ./pkgs/polaris-stream (
           polarisCallArgs
           // {
+            cudaSupport = true;
             enablePhase1Portal = true;
             enablePhase2VulkanCuda = true;
             enablePhase4Hdr = false;
@@ -49,6 +58,7 @@
         polaris-stream-phase1-2-4 = final.callPackage ./pkgs/polaris-stream (
           polarisCallArgs
           // {
+            cudaSupport = true;
             enablePhase1Portal = true;
             enablePhase2VulkanCuda = true;
             enablePhase4Hdr = true;
@@ -67,7 +77,13 @@
         let
           pkgs = import nixpkgs {
             inherit system;
-            config.allowUnfree = true;
+            config = {
+              allowUnfree = true;
+              # Pure flake packages must match the CUDA/NVENC host path used on lea.
+              # Without this, `nix build .#polaris-stream` omits NVENC and a drop-in
+              # of that result black-screens live streams.
+              cudaSupport = true;
+            };
             overlays = [ self.overlays.default ];
           };
         in
