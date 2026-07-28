@@ -131,9 +131,9 @@ stdenv'.mkDerivation (finalAttrs: {
       fetchFromGitHub {
         owner = "luxus";
         repo = "polaris";
-        # Audio: once-per-stream re-pin (no 1Hz EE thrash crackle).
-        rev = "d7989b9b301346519d698efaebb40ee23caeac3d";
-        hash = "sha256-jBe+lZ1DnxyLTkCFncsUqn2Urhw5nj+OCt0/DqmzcxE=";
+        # Audio: loopback sunshine* → host (local sound) + re-pin cooldown.
+        rev = "b7492b9ed9796357ec198e27b78eb01440b2cf5f";
+        hash = "sha256-3uwLUa/fX6MIA2pXWOd3swtnFiZLwKRqrpXYFd1Qxqg=";
         fetchSubmodules = true;
       };
 
@@ -311,8 +311,8 @@ stdenv'.mkDerivation (finalAttrs: {
   env = {
     BUILD_VERSION = "0-unstable-2026-07-28";
     BRANCH = "feat/linux-stream-runtime";
-    # Matches src.rev (audio re-pin thrash fix + nested WSI).
-    COMMIT = "d7989b9b301346519d698efaebb40ee23caeac3d";
+    # Matches src.rev (local loopback + re-pin cooldown + nested WSI).
+    COMMIT = "b7492b9ed9796357ec198e27b78eb01440b2cf5f";
   };
 
   # cmake runs in $source/build; stamp files so web-ui / browser-stream targets
