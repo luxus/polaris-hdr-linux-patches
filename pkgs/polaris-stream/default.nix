@@ -131,9 +131,9 @@ stdenv'.mkDerivation (finalAttrs: {
       fetchFromGitHub {
         owner = "luxus";
         repo = "polaris";
-        # Nested WSI for HDR Steam titles (restore pre-SB-5 polaris-hdr-session path).
-        rev = "0faab10ecd8fce745cd7dbc8b47e2498892a59ab";
-        hash = "sha256-aM6LYfCa7D4+inck+TMFKxfPVk0cKHW5N8aW7eAT4gQ=";
+        # Audio: once-per-stream re-pin (no 1Hz EE thrash crackle).
+        rev = "d7989b9b301346519d698efaebb40ee23caeac3d";
+        hash = "sha256-jBe+lZ1DnxyLTkCFncsUqn2Urhw5nj+OCt0/DqmzcxE=";
         fetchSubmodules = true;
       };
 
@@ -311,8 +311,8 @@ stdenv'.mkDerivation (finalAttrs: {
   env = {
     BUILD_VERSION = "0-unstable-2026-07-28";
     BRANCH = "feat/linux-stream-runtime";
-    # Matches src.rev (nested WSI HDR + BGRx demote).
-    COMMIT = "0faab10ecd8fce745cd7dbc8b47e2498892a59ab";
+    # Matches src.rev (audio re-pin thrash fix + nested WSI).
+    COMMIT = "d7989b9b301346519d698efaebb40ee23caeac3d";
   };
 
   # cmake runs in $source/build; stamp files so web-ui / browser-stream targets
