@@ -1570,7 +1570,7 @@ diff --git a/src/platform/linux/misc.cpp b/src/platform/linux/misc.cpp
 diff --git a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewire_capture.cpp
 --- a/src/platform/linux/pipewire_capture.cpp
 +++ b/src/platform/linux/pipewire_capture.cpp
-@@ -0,0 +1,1053 @@
+@@ -0,0 +1,1064 @@
 +/**
 + * @file src/platform/linux/pipewire_capture.cpp
 + * @brief PipeWire capture format, copy, and frame metadata policy.

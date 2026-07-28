@@ -4,7 +4,7 @@
 
 | Item | State |
 |------|--------|
-| **Polaris pin** | **luxus/polaris** `ddf7249` (stream_path + headless_dongle + topology). PipeWire teardown fix patch after phase1. Local: `POLARIS_SRC=… nix build --impure .#polaris-stream` |
+| **Polaris pin** | **luxus/polaris** `50929ef` feat/linux-stream-runtime (SB ordered stop + portal_grab + SB-5 mode-neutral). Topics patch + SB-2 queue guard. CUDA build OK. |
 | **Mode rework** | First-class `linux_stream_mode` / `linux_private_runtime`; labwc backend; `gamescope_stream` registered unavailable. Phase patches dry-apply clean with offsets on rework tree |
 | **Deploy lea** | patches `add85e6` → cancel **respond-before-teardown** (Moonlight "another device" was failed cancel HTTP after SEGV) |
 | **Quit UX** | Host authorized quit then SEGVd mid nested undo before writing 200 → client "started by another device". Fix: answer cancel first + owner skips stale sessiontoken |

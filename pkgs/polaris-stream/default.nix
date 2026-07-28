@@ -131,14 +131,14 @@ stdenv'.mkDerivation (finalAttrs: {
         owner = "luxus";
         repo = "polaris";
         # Stream path registry + headless_dongle + stream_runtime (feat/linux-stream-runtime tip).
-        rev = "2d5f50b1bcea5810fbb571055b12edea6ee07b75";
-        hash = "sha256-uqrMo/SKGXf5C8TaxfgbiTGQFGyD/rWxWjpwNutQETI=";
+        rev = "50929ef0b67878ce374bdc270290991372dd7892";
+        hash = "sha256-HHj3l/NtEZ0qA927ttA5MpBLZBfR7WSBZvbiFf/Z4Qo=";
         fetchSubmodules = true;
       };
 
   # Phase 3 (Gamescope Stream ownership) is host/session wiring, not these patches.
   # Topic series under polaris/phase*.patch is retained for older revs. Current tip
-  # (2d5f50b+) needs a rebased single patch: solid-base portal changes conflicted
+  # (50929ef+) needs a rebased single patch: solid-base portal changes conflicted
   # with the modular PipeWire/phase1..phase2 series. Production always enables
   # phase1 + phase2 + phase4 + private bus via this combined patch.
   # fix-cancel-owner-token.patch is upstream in luxus/polaris >= a364fb7 / 06b0925.
