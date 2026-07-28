@@ -7,6 +7,7 @@
   lib,
   stdenv,
   fetchFromGitHub,
+  fetchgit,
   fetchzip,
   autoPatchelfHook,
   autoAddDriverRunpath,
@@ -112,15 +113,6 @@ let
       .${stdenv.hostPlatform.system};
   };
 
-  # Nested submodule of moonlight-common-c; fetchFromGitHub often omits it.
-  # Pin matches third-party/moonlight-common-c/enet @ 115a10b (cgutman/enet).
-  enetSrc = fetchFromGitHub {
-    owner = "cgutman";
-    repo = "enet";
-    rev = "115a10baa1d7f291ff5b870765610fd3b4a6e43c";
-    hash = "sha256-B8hQDwb5OplDRA6fo2KC47nA8JxICVeOQ2G7rh6mZi8=";
-  };
-
 in
 assert stdenv.hostPlatform.isLinux;
 assert (!phase2VulkanCuda || enablePhase1Portal);
@@ -133,16 +125,17 @@ stdenv'.mkDerivation (finalAttrs: {
   # After pushing feat/linux-stream-runtime (or master), update rev + hash.
   version = "0-unstable-2026-07-28";
 
+  # fetchgit (not fetchFromGitHub): nested submodules (e.g. moonlight-common-c/enet)
+  # must be present or cmake fails. Hash is recursive-submodule narHash.
   src =
     if polarisSrc != null then
       polarisSrc
     else
-      fetchFromGitHub {
-        owner = "luxus";
-        repo = "polaris";
+      fetchgit {
+        url = "https://github.com/luxus/polaris.git";
         # Audio: loopback sunshine* → host (local sound) + re-pin cooldown.
         rev = "b7492b9ed9796357ec198e27b78eb01440b2cf5f";
-        hash = "sha256-3uwLUa/fX6MIA2pXWOd3swtnFiZLwKRqrpXYFd1Qxqg=";
+        hash = "sha256-FRrYoQl4TUfQ4aGiD79zREVfMb76hzBVJkuywe8lGTI=";
         fetchSubmodules = true;
       };
 
@@ -154,17 +147,6 @@ stdenv'.mkDerivation (finalAttrs: {
   # Phase flags below remain for step packages / documentation; they no longer
   # select patch files once the pin includes the phase code.
   patches = [ ];
-
-  # Nested submodule not always present after fetchFromGitHub + fetchSubmodules.
-  postUnpack = ''
-    enet_dst="$sourceRoot/third-party/moonlight-common-c/enet"
-    if [ ! -f "$enet_dst/CMakeLists.txt" ]; then
-      echo "polaris-stream: injecting nested enet submodule into $enet_dst"
-      rm -rf "$enet_dst"
-      cp -a ${enetSrc} "$enet_dst"
-      chmod -R u+w "$enet_dst"
-    fi
-  '';
 
   ui = buildNpmPackage {
     inherit (finalAttrs) src version;
