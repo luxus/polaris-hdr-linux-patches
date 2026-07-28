@@ -133,7 +133,7 @@ stdenv'.mkDerivation (finalAttrs: {
         repo = "polaris";
         # Portal lock contract + dongle defaults to portal (not CAP_SYS_ADMIN KMS).
         rev = "559aac49aac74532cb7f2cc112bffca87210e61c";
-        hash = "sha256-Fx+cWGrK2/rYzUJ+4f5YUGKWMndjxa82aW8M/E+/opw=";
+        hash = "sha256-CwCuL6X/1bPHuFQSzNG6tEEJfHHX0jJ9Klf5cC+QyQs=";
         fetchSubmodules = true;
       };
 
