@@ -134,8 +134,8 @@ stdenv'.mkDerivation (finalAttrs: {
       fetchgit {
         url = "https://github.com/luxus/polaris.git";
         # Audio: loopback sunshine* → host (local sound) + re-pin cooldown.
-        rev = "b7492b9ed9796357ec198e27b78eb01440b2cf5f";
-        hash = "sha256-FRrYoQl4TUfQ4aGiD79zREVfMb76hzBVJkuywe8lGTI=";
+        rev = "02d1e993ee4ba56d0e3a90c2cfb3feed745a525f";
+        hash = "sha256-oLeJEjAgO9rEZ6gcB0S9nIDfuDF2++UqXk0iHzkiwfo=";
         fetchSubmodules = true;
       };
 
@@ -314,7 +314,7 @@ stdenv'.mkDerivation (finalAttrs: {
     BUILD_VERSION = "0-unstable-2026-07-28";
     BRANCH = "feat/linux-stream-runtime";
     # Matches src.rev (local loopback + re-pin cooldown + nested WSI).
-    COMMIT = "b7492b9ed9796357ec198e27b78eb01440b2cf5f";
+    COMMIT = "02d1e993ee4ba56d0e3a90c2cfb3feed745a525f";
   };
 
   # cmake runs in $source/build; stamp files so web-ui / browser-stream targets
