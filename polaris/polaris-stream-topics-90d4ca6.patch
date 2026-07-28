@@ -3,8 +3,8 @@ Subject: [PATCH] polaris-stream topics rebased on 90d4ca6
 
 Combined phase1 portal/PipeWire + phase2 vulkan-cuda + phase4 HDR + private bus
 + pipewire teardown, rebased onto luxus/polaris 90d4ca6 (SB-2 tip).
-Forward-ported from polaris-stream-topics-2d5f50b via 50929ef apply + cherry-pick
-50929ef..90d4ca6 (keep pipewire_capture shared_ptr architecture).
+Adds capture_t::stop() so release_global_capture can wake waiters without
+touching private running_/frame_cv_ fields.
 
 diff --git a/README.md b/README.md
 index e6c8f32..cd2fe96 100644
@@ -1581,10 +1581,10 @@ index ac3d582..cc0da25 100644
  
 diff --git a/src/platform/linux/pipewire_capture.cpp b/src/platform/linux/pipewire_capture.cpp
 new file mode 100644
-index 0000000..741caec
+index 0000000..8bf94b8
 --- /dev/null
 +++ b/src/platform/linux/pipewire_capture.cpp
-@@ -0,0 +1,1064 @@
+@@ -0,0 +1,1071 @@
 +/**
 + * @file src/platform/linux/pipewire_capture.cpp
 + * @brief PipeWire capture format, copy, and frame metadata policy.
@@ -2209,6 +2209,13 @@ index 0000000..741caec
 +    return true;
 +  }
 +
++  void capture_t::stop() {
++    std::lock_guard lk(frame_mtx_);
++    running_ = false;
++    terminal_result_ = wait_result_e::reinit;
++    frame_cv_.notify_all();
++  }
++
 +  bool capture_t::running() const {
 +    std::lock_guard lk(frame_mtx_);
 +    return running_;
@@ -2651,10 +2658,10 @@ index 0000000..741caec
 +}  // namespace pipewire_capture
 diff --git a/src/platform/linux/pipewire_capture.h b/src/platform/linux/pipewire_capture.h
 new file mode 100644
-index 0000000..9bfcb18
+index 0000000..2306e55
 --- /dev/null
 +++ b/src/platform/linux/pipewire_capture.h
-@@ -0,0 +1,211 @@
+@@ -0,0 +1,213 @@
 +/**
 + * @file src/platform/linux/pipewire_capture.h
 + * @brief PipeWire capture format, copy, and frame metadata policy.
@@ -2807,6 +2814,8 @@ index 0000000..9bfcb18
 +    capture_t &operator=(const capture_t &) = delete;
 +
 +    bool start();
++    // Wake waiters and mark capture terminal without destroying (SB-2 teardown).
++    void stop();
 +    bool running() const;
 +    bool negotiated() const;
 +    bool negotiated_dmabuf() const;
@@ -2867,7 +2876,7 @@ index 0000000..9bfcb18
 +#endif
 +}  // namespace pipewire_capture
 diff --git a/src/platform/linux/portal_grab.cpp b/src/platform/linux/portal_grab.cpp
-index e153d85..3a4ac8d 100644
+index e153d85..3fce17c 100644
 --- a/src/platform/linux/portal_grab.cpp
 +++ b/src/platform/linux/portal_grab.cpp
 @@ -7,6 +7,7 @@
@@ -3413,7 +3422,7 @@ index e153d85..3a4ac8d 100644
        if (!g_capture && !g_portal) {
          return;
        }
-@@ -1120,6 +1096,9 @@ namespace portal {
+@@ -1120,12 +1096,15 @@ namespace portal {
        capture = std::move(g_capture);
        portal = std::move(g_portal);
        g_node_id = 0;
@@ -3422,7 +3431,16 @@ index e153d85..3a4ac8d 100644
 +      g_capture_adapter.clear();
      }
      // Stop the capture loop before dropping our ref so waiters wake and exit
-     // instead of blocking join past force-shutdown.
+-    // instead of blocking join past force-shutdown.
++    // instead of blocking join past force-shutdown. capture_t::stop() is the
++    // public SB-2 path (running_/frame_cv_ are private).
+     if (capture) {
+-      capture->running = false;
+-      capture->frame_cv.notify_all();
++      capture->stop();
+     }
+     // Destructors outside the mutex: PW loop stop can take a moment and must
+     // not serialize against a concurrent re-acquire on the next stream.
 @@ -1145,7 +1124,8 @@ namespace portal {
          return false;
        }
