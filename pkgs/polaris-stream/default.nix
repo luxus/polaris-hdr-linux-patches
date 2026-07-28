@@ -313,8 +313,8 @@ stdenv'.mkDerivation (finalAttrs: {
   env = {
     BUILD_VERSION = "0-unstable-2026-07-28";
     BRANCH = "feat/linux-stream-runtime";
-    # Matches src.rev (local loopback + re-pin cooldown + nested WSI).
-    COMMIT = "02d1e993ee4ba56d0e3a90c2cfb3feed745a525f";
+    # Matches src.rev (EasyEffects capture when host default is a processing sink).
+    COMMIT = "6cd177733f16350b6879c4f316553e8babda290c";
   };
 
   # cmake runs in $source/build; stamp files so web-ui / browser-stream targets
