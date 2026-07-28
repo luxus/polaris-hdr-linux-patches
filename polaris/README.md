@@ -2,7 +2,7 @@
 
 Wired by `pkgs/polaris-stream/default.nix`.
 
-**Pin base:** [luxus/polaris](https://github.com/luxus/polaris) (fork) — currently the **stream mode / `stream_runtime` foundation** branch (`feat/linux-stream-runtime`), not papi-ux master. Rebase phase patches against that base so Gamescope Stream integration does not hit a surprise stack rewrite later.
+**Pin base:** [luxus/polaris](https://github.com/luxus/polaris) (fork) — `feat/linux-stream-runtime` tip **`85e6733`** (2026-07-28): portal lock contract + modular `pipewire_capture` + headless_dongle `capture=kms` normalize. Phases 1/2/4 + private bus are **in tree**; `pkgs/polaris-stream` applies **no** topics mega-patch on this pin.
 
 Local pin without pushing:
 
@@ -11,6 +11,8 @@ POLARIS_SRC=$HOME/projects/polaris nix build --impure --no-link .#polaris-stream
 ```
 
 After the branch is on GitHub, refresh `rev` + `hash` in `pkgs/polaris-stream/default.nix` (leave `POLARIS_SRC` unset for pure consumer builds).
+
+**Portal video fix (85e6733 / topics lock contract):** `ensure_global_capture` must call `ensure_global_session_unlocked()` under `g_portal_mu` (never nested `ensure_global_session()`), and wait for PipeWire negotiation **outside** `g_portal_mu`/`g_capture_mtx`. Older `polaris-stream-topics-4b0647b.patch` self-deadlocked after ScreenCast Start → no node/PipeWire/CUDA DMABUF → videoThread hang → 10s SIGTRAP. The on-disk topics file was rebased with that fix for 0118ace-era rebuilds only.
 
 Goal: land upstream in phases; **turn off a local phase when that code is on main**, rebase remaining patches, keep the same host behavior until everything is upstream.
 

@@ -118,8 +118,9 @@ assert (!phase2VulkanCuda || enablePhase1Portal);
 assert (!enablePortalPrivateBus || enablePhase1Portal);
 stdenv'.mkDerivation (finalAttrs: {
   pname = "polaris-stream";
-  # luxus/polaris fork + topic patches under ../../polaris/ (see polaris/README.md).
-  # Archived numbered series: ../../archived/polaris/
+  # luxus/polaris fork. Phase1/2/4 + private bus + portal lock contract are on
+  # feat/linux-stream-runtime tip (85e6733+). Historical topics/phase patches under
+  # ../../polaris/ and ../../archived/polaris/ for older pins only.
   # After pushing feat/linux-stream-runtime (or master), update rev + hash.
   version = "0-unstable-2026-07-28";
 
@@ -130,23 +131,21 @@ stdenv'.mkDerivation (finalAttrs: {
       fetchFromGitHub {
         owner = "luxus";
         repo = "polaris";
-        # Stream path registry + headless_dongle + stream_runtime (feat/linux-stream-runtime tip).
-        rev = "0118acea28f3f94beda23ad68d02a4f111916078";
-        hash = "sha256-2y67UfCEThmITh4ooMiaPO70DKGgAfGslt6S37jyfeE=";
+        # Portal lock contract + pipewire_capture + headless_dongle kms normalize
+        # (fixes topics self-deadlock: ensure_global_capture nested g_portal_mu).
+        rev = "85e67330f9fd35cb3ba68f95470b9b3fc0036cf7";
+        hash = "sha256-9UFE4b+hGiTz+L9/r+x373v1eBU46+b6hdMBsLT5MzM=";
         fetchSubmodules = true;
       };
 
-  # Phase 3 (Gamescope Stream ownership) is host/session wiring, not these patches.
-  # Topic series under polaris/phase*.patch is retained for older revs. Current tip
-  # (4b0647b+) needs a rebased single patch: solid-base portal changes conflicted
-  # with the modular PipeWire/phase1..phase2 series. Production always enables
-  # phase1 + phase2 + phase4 + private bus via this combined patch.
-  # Includes SB-2 async portal capture destroy (pw_thread_loop_stop off HTTP thread).
+  # Phases 1/2/4 + private ScreenCast bus + SB-2 async portal destroy landed in
+  # luxus/polaris >= 85e6733. Do not re-apply polaris-stream-topics-*.patch on this
+  # pin (it would conflict). Retained on disk for 0118ace-era rebuilds only;
+  # that file was also fixed for the nested-lock / negotiate-under-mutex bugs.
   # fix-cancel-owner-token.patch is upstream in luxus/polaris >= a364fb7 / 06b0925.
-  patches =
-    lib.optionals enablePhase1Portal [
-      ../../polaris/polaris-stream-topics-4b0647b.patch
-    ];
+  # Phase flags below remain for step packages / documentation; they no longer
+  # select patch files once the pin includes the phase code.
+  patches = [ ];
 
   ui = buildNpmPackage {
     inherit (finalAttrs) src version;
