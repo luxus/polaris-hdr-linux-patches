@@ -134,8 +134,8 @@ stdenv'.mkDerivation (finalAttrs: {
       fetchgit {
         url = "https://github.com/luxus/polaris.git";
         # Audio: capture EasyEffects when it owns default (FMOD target.object).
-        rev = "6cd177733f16350b6879c4f316553e8babda290c";
-        hash = "sha256-NRnvfj9rlpWKNbfNlfc1j4FOlbTh5Jb82+U2ycncteE=";
+        rev = "ad0ed6bf0e6a73457c9ce0b3dd4762fb350b7479";
+        hash = "sha256-rdcWqBN6C6VMoOuJtW4mnKsq9irnPS7Scul4F7zGsXk=";
         fetchSubmodules = true;
       };
 
@@ -314,7 +314,7 @@ stdenv'.mkDerivation (finalAttrs: {
     BUILD_VERSION = "0-unstable-2026-07-28";
     BRANCH = "feat/linux-stream-runtime";
     # Matches src.rev (EasyEffects capture when host default is a processing sink).
-    COMMIT = "6cd177733f16350b6879c4f316553e8babda290c";
+    COMMIT = "ad0ed6bf0e6a73457c9ce0b3dd4762fb350b7479";
   };
 
   # cmake runs in $source/build; stamp files so web-ui / browser-stream targets
