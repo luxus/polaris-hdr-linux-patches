@@ -133,9 +133,9 @@ stdenv'.mkDerivation (finalAttrs: {
     else
       fetchgit {
         url = "https://github.com/luxus/polaris.git";
-        # feat/linux-stream-runtime: S4 + P1 + ponytail p1-p30 + dongle/gamescope polish
-        rev = "31e84542e672d0e2c400aa5d81f46680982f3521";
-        hash = "sha256-qEoe+FZ5c+Xg1IzfDtKLIBH8CXA29GMjIowQqLZ1TkM=";
+        # feat/linux-stream-runtime: fix gamescope attach env on idle reuse
+        rev = "a13ddb9e2dc1e16e37c8a69a9df784da6f3992f0";
+        hash = "sha256-TUFUzqNrqAtFphbAhUNzeik5NdpBcw5m9s6vu3Mx8Qc=";
         fetchSubmodules = true;
       };
 
