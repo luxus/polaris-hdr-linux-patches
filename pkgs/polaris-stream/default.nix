@@ -131,9 +131,9 @@ stdenv'.mkDerivation (finalAttrs: {
       fetchFromGitHub {
         owner = "luxus";
         repo = "polaris";
-        # Dongle: honest SDR host portal (no fake HDR PQ on 8-bit).
-        rev = "82f8f28ef609e435c5a72ae4eb954bde39f963ca";
-        hash = "sha256-Co4HBSxSRq8P45M5Uk32OI6ghJNAcKO/QRdAVqqDrWk=";
+        # Gamescope: demote PQ when capture is BGRx; restart idle when force≠cmdline HDR.
+        rev = "db5568e263519b15387b74daeaa5ab582dc4d1f7";
+        hash = "sha256-LLRdYZSqd5iIi706SUo/AX7mfp0zz7qien9dhctGBxk=";
         fetchSubmodules = true;
       };
 
@@ -311,8 +311,8 @@ stdenv'.mkDerivation (finalAttrs: {
   env = {
     BUILD_VERSION = "0-unstable-2026-07-28";
     BRANCH = "feat/linux-stream-runtime";
-    # Matches src.rev (portal lock contract + dongle portal default).
-    COMMIT = "82f8f28ef609e435c5a72ae4eb954bde39f963ca";
+    # Matches src.rev (BGRx PQ demote + idle HDR flag sync).
+    COMMIT = "db5568e263519b15387b74daeaa5ab582dc4d1f7";
   };
 
   # cmake runs in $source/build; stamp files so web-ui / browser-stream targets
