@@ -131,9 +131,9 @@ stdenv'.mkDerivation (finalAttrs: {
       fetchFromGitHub {
         owner = "luxus";
         repo = "polaris";
-        # Dongle: host portal CPU path when KDE omits DMA-BUF modifiers.
-        rev = "297d99035ba54a4070cec5726ec249b101ec43d0";
-        hash = "sha256-aEgRTJSecUIeO2RZNl5DR7S1gsdgHKsFoThJJWNkeZo=";
+        # Dongle: honest SDR host portal (no fake HDR PQ on 8-bit).
+        rev = "82f8f28ef609e435c5a72ae4eb954bde39f963ca";
+        hash = "sha256-Co4HBSxSRq8P45M5Uk32OI6ghJNAcKO/QRdAVqqDrWk=";
         fetchSubmodules = true;
       };
 
@@ -312,7 +312,7 @@ stdenv'.mkDerivation (finalAttrs: {
     BUILD_VERSION = "0-unstable-2026-07-28";
     BRANCH = "feat/linux-stream-runtime";
     # Matches src.rev (portal lock contract + dongle portal default).
-    COMMIT = "297d99035ba54a4070cec5726ec249b101ec43d0";
+    COMMIT = "82f8f28ef609e435c5a72ae4eb954bde39f963ca";
   };
 
   # cmake runs in $source/build; stamp files so web-ui / browser-stream targets
