@@ -133,7 +133,7 @@ stdenv'.mkDerivation (finalAttrs: {
         repo = "polaris";
         # Dongle: host portal CPU path when KDE omits DMA-BUF modifiers.
         rev = "297d99035ba54a4070cec5726ec249b101ec43d0";
-        hash = "sha256-O8XNj3Yu0+F0lWvkZ8l9VctRBRdM98IDno1qHQ1Hkeo=";
+        hash = "sha256-aEgRTJSecUIeO2RZNl5DR7S1gsdgHKsFoThJJWNkeZo=";
         fetchSubmodules = true;
       };
 
