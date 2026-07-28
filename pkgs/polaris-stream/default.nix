@@ -134,8 +134,8 @@ stdenv'.mkDerivation (finalAttrs: {
       fetchgit {
         url = "https://github.com/luxus/polaris.git";
         # Audio: capture EasyEffects when it owns default (FMOD target.object).
-        rev = "5f06086355c613c1b8b7e5de5a8c93b024ef34aa";
-        hash = "sha256-BClWafu32PzP9gJx1qfg01ak9IXngV/cHCg82kicKmw=";
+        rev = "0c7a4efd45da57605f0835c90b51e6b2e244a7a2";
+        hash = "sha256-IIyo/X4L5btdEjiBIKt86R0BtVxxOodCJ7VvI6E/Emg=";
         fetchSubmodules = true;
       };
 
