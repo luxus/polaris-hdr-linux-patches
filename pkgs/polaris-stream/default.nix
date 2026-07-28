@@ -132,8 +132,8 @@ stdenv'.mkDerivation (finalAttrs: {
         owner = "luxus";
         repo = "polaris";
         # Portal lock contract + dongle defaults to portal (not CAP_SYS_ADMIN KMS).
-        rev = "0bfdcd96561eaf5faf10680f48705f378cd22e43";
-        hash = "sha256-SOkFMtQOwOAh/0brl9tf2Kvk+vwl+aLN11jEh4cmzFs=";
+        rev = "56a0d6693d683ea222abf51e53a2c319cc7e85b2";
+        hash = "sha256-LKd6qQLQzVWG6hs7y17H3VmGVzNJihsJESe+z7LPmJk=";
         fetchSubmodules = true;
       };
 
@@ -312,7 +312,7 @@ stdenv'.mkDerivation (finalAttrs: {
     BUILD_VERSION = "0-unstable-2026-07-28";
     BRANCH = "feat/linux-stream-runtime";
     # Matches src.rev (portal lock contract + dongle portal default).
-    COMMIT = "0bfdcd96561eaf5faf10680f48705f378cd22e43";
+    COMMIT = "56a0d6693d683ea222abf51e53a2c319cc7e85b2";
   };
 
   # cmake runs in $source/build; stamp files so web-ui / browser-stream targets
