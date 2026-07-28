@@ -131,8 +131,8 @@ stdenv'.mkDerivation (finalAttrs: {
         owner = "luxus";
         repo = "polaris";
         # Stream path registry + headless_dongle + stream_runtime (feat/linux-stream-runtime tip).
-        rev = "87e73ca985fc9121a9f466b6b86c6a9848cfff10";
-        hash = "sha256-lzfJFYvH/BuTWiN8hPqjcGCkQ0pim/7gJfv4nhBk/P0=";
+        rev = "1e520d96bae61d52a5861244e22ee38730869870";
+        hash = "sha256-23LqiGO1NvM1bETBZzSTxj4j7tpf/iV9M9yl/yISclI=";
         fetchSubmodules = true;
       };
 
